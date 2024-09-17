@@ -277,6 +277,9 @@ impl Cpu {
                 ArithmeticTarget::L => self.or(self.registers.l),
             },
             Instruction::RESET(target, bit) => self.reset(target, bit),
+            Instruction::RL(target) => self.rl(target),
+            Instruction::RLA => self.rl(ArithmeticTarget::A),
+            Instruction::RLC(target) => self.rlc(target),
             _ => todo!(),
         }
     }
@@ -433,5 +436,47 @@ impl Cpu {
             ArithmeticTarget::H => self.registers.h = self.registers.h & !(1 << bit),
             ArithmeticTarget::L => self.registers.l = self.registers.l & !(1 << bit),
         };
+    }
+    fn rl(&mut self, target: ArithmeticTarget) {
+        let value = match target {
+            ArithmeticTarget::A => self.registers.a,
+            ArithmeticTarget::B => self.registers.b,
+            ArithmeticTarget::C => self.registers.c,
+            ArithmeticTarget::D => self.registers.d,
+            ArithmeticTarget::E => self.registers.e,
+            ArithmeticTarget::H => self.registers.h,
+            ArithmeticTarget::L => self.registers.l,
+        };
+
+        let carry_value = if self.registers.f.carry { 1 } else { 0 };
+        let will_carry = (value & (1 << 7)) != 0;
+
+        let mut new_value = value << 1;
+        new_value |= carry_value;
+
+        match target {
+            ArithmeticTarget::A => self.registers.a = new_value,
+            ArithmeticTarget::B => self.registers.b = new_value,
+            ArithmeticTarget::C => self.registers.c = new_value,
+            ArithmeticTarget::D => self.registers.d = new_value,
+            ArithmeticTarget::E => self.registers.e = new_value,
+            ArithmeticTarget::H => self.registers.h = new_value,
+            ArithmeticTarget::L => self.registers.l = new_value,
+        };
+
+        self.registers.f.zero = new_value == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.carry = will_carry;
+        self.registers.f.half_carry = false;
+    }
+    fn rlc(&mut self, _target: ArithmeticTarget) {
+        //u8 carry_flag = check_bit(value, 7);
+        //u8 truncated_bit = check_bit(value, 7);
+        //u8 result = static_cast<u8>((value << 1) | truncated_bit);
+        //
+        //set_flag_carry(carry_flag);
+        //set_flag_zero(result == 0);
+        //set_flag_half_carry(false);
+        //set_flag_subtract(false);
     }
 }
