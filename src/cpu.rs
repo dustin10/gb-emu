@@ -136,7 +136,7 @@ pub enum Instruction {
     /// Adds specific register's contents to the A register's contents.
     ADD(ArithmeticTarget),
     /// Add to HL - just like ADD except that the target is added to the HL register
-    ADDHL,
+    ADDHL(ArithmeticTarget),
     /// Logical AND - do a bitwise and on the value in a specific register and the value in the A register
     AND(ArithmeticTarget),
     /// Bit test - test to see if a specific bit of a specific register is set
@@ -246,68 +246,17 @@ impl Cpu {
     /// Executes the specified [Instruction].
     pub fn execute(&mut self, instruction: Instruction) -> u16 {
         match instruction {
-            Instruction::ADC(target) => match target {
-                ArithmeticTarget::A => self.add_carry_a(self.registers.a),
-                ArithmeticTarget::B => self.add_carry_a(self.registers.b),
-                ArithmeticTarget::C => self.add_carry_a(self.registers.c),
-                ArithmeticTarget::D => self.add_carry_a(self.registers.d),
-                ArithmeticTarget::E => self.add_carry_a(self.registers.e),
-                ArithmeticTarget::H => self.add_carry_a(self.registers.h),
-                ArithmeticTarget::L => self.add_carry_a(self.registers.l),
-            },
-            Instruction::ADD(target) => match target {
-                ArithmeticTarget::A => self.add_a(self.registers.a),
-                ArithmeticTarget::B => self.add_a(self.registers.b),
-                ArithmeticTarget::C => self.add_a(self.registers.c),
-                ArithmeticTarget::D => self.add_a(self.registers.d),
-                ArithmeticTarget::E => self.add_a(self.registers.e),
-                ArithmeticTarget::H => self.add_a(self.registers.h),
-                ArithmeticTarget::L => self.add_a(self.registers.l),
-            },
-            Instruction::ADDHL => {
-                let new_value = self.add(self.registers.c);
-                self.registers.set_hl(new_value as u16);
-            }
-            Instruction::AND(target) => match target {
-                ArithmeticTarget::A => self.and_a(self.registers.a),
-                ArithmeticTarget::B => self.and_a(self.registers.b),
-                ArithmeticTarget::C => self.and_a(self.registers.c),
-                ArithmeticTarget::D => self.and_a(self.registers.d),
-                ArithmeticTarget::E => self.and_a(self.registers.e),
-                ArithmeticTarget::H => self.and_a(self.registers.h),
-                ArithmeticTarget::L => self.and_a(self.registers.l),
-            },
-            Instruction::BIT(target, bit) => match target {
-                ArithmeticTarget::A => self.bit(self.registers.a, bit),
-                ArithmeticTarget::B => self.bit(self.registers.b, bit),
-                ArithmeticTarget::C => self.bit(self.registers.c, bit),
-                ArithmeticTarget::D => self.bit(self.registers.d, bit),
-                ArithmeticTarget::E => self.bit(self.registers.e, bit),
-                ArithmeticTarget::H => self.bit(self.registers.h, bit),
-                ArithmeticTarget::L => self.bit(self.registers.l, bit),
-            },
+            Instruction::ADC(target) => self.add_carry_a(self.target_value(target)),
+            Instruction::ADD(target) => self.add_a(self.target_value(target)),
+            Instruction::ADDHL(target) => self.addhl(self.target_value(target)),
+            Instruction::AND(target) => self.and_a(self.target_value(target)),
+            Instruction::BIT(target, bit) => self.bit(self.target_value(target), bit),
             Instruction::CCF => self.ccf(),
-            Instruction::CP(target) => match target {
-                ArithmeticTarget::A => self.cp(self.registers.a),
-                ArithmeticTarget::B => self.cp(self.registers.b),
-                ArithmeticTarget::C => self.cp(self.registers.c),
-                ArithmeticTarget::D => self.cp(self.registers.d),
-                ArithmeticTarget::E => self.cp(self.registers.e),
-                ArithmeticTarget::H => self.cp(self.registers.h),
-                ArithmeticTarget::L => self.cp(self.registers.l),
-            },
+            Instruction::CP(target) => self.cp(self.target_value(target)),
             Instruction::CPL => self.cpl(),
             Instruction::DEC(target) => self.dec(target),
             Instruction::INC(target) => self.inc(target),
-            Instruction::OR(target) => match target {
-                ArithmeticTarget::A => self.or(self.registers.a),
-                ArithmeticTarget::B => self.or(self.registers.b),
-                ArithmeticTarget::C => self.or(self.registers.c),
-                ArithmeticTarget::D => self.or(self.registers.d),
-                ArithmeticTarget::E => self.or(self.registers.e),
-                ArithmeticTarget::H => self.or(self.registers.h),
-                ArithmeticTarget::L => self.or(self.registers.l),
-            },
+            Instruction::OR(target) => self.or(self.target_value(target)),
             Instruction::RESET(target, bit) => self.reset(target, bit),
             Instruction::RL(target) => self.rl(target),
             Instruction::RLA => self.rl(ArithmeticTarget::A),
@@ -317,42 +266,29 @@ impl Cpu {
             Instruction::RRC(target) => self.rrc(target),
             Instruction::RRCA => self.rrc(ArithmeticTarget::A),
             Instruction::RRLA => self.rrla(),
-            Instruction::SBC(target) => match target {
-                ArithmeticTarget::A => self.sbc(self.registers.a),
-                ArithmeticTarget::B => self.sbc(self.registers.b),
-                ArithmeticTarget::C => self.sbc(self.registers.c),
-                ArithmeticTarget::D => self.sbc(self.registers.d),
-                ArithmeticTarget::E => self.sbc(self.registers.e),
-                ArithmeticTarget::H => self.sbc(self.registers.h),
-                ArithmeticTarget::L => self.sbc(self.registers.l),
-            },
+            Instruction::SBC(target) => self.sbc(self.target_value(target)),
             Instruction::SCF => self.scf(),
             Instruction::SET(target, bit) => self.set(target, bit),
             Instruction::SLA(target) => self.sla(target),
             Instruction::SRA(target) => self.sra(target),
             Instruction::SRL(target) => self.srl(target),
-            Instruction::SUB(target) => match target {
-                ArithmeticTarget::A => self.sub(self.registers.a),
-                ArithmeticTarget::B => self.sub(self.registers.b),
-                ArithmeticTarget::C => self.sub(self.registers.c),
-                ArithmeticTarget::D => self.sub(self.registers.d),
-                ArithmeticTarget::E => self.sub(self.registers.e),
-                ArithmeticTarget::H => self.sub(self.registers.h),
-                ArithmeticTarget::L => self.sub(self.registers.l),
-            },
+            Instruction::SUB(target) => self.sub(self.target_value(target)),
             Instruction::SWAP(target) => self.swap(target),
-            Instruction::XOR(target) => match target {
-                ArithmeticTarget::A => self.xor(self.registers.a),
-                ArithmeticTarget::B => self.xor(self.registers.b),
-                ArithmeticTarget::C => self.xor(self.registers.c),
-                ArithmeticTarget::D => self.xor(self.registers.d),
-                ArithmeticTarget::E => self.xor(self.registers.e),
-                ArithmeticTarget::H => self.xor(self.registers.h),
-                ArithmeticTarget::L => self.xor(self.registers.l),
-            },
+            Instruction::XOR(target) => self.xor(self.target_value(target)),
         }
 
         self.prog_counter.wrapping_add(1)
+    }
+    fn target_value(&self, target: ArithmeticTarget) -> u8 {
+        match target {
+            ArithmeticTarget::A => self.registers.a,
+            ArithmeticTarget::B => self.registers.b,
+            ArithmeticTarget::C => self.registers.c,
+            ArithmeticTarget::D => self.registers.d,
+            ArithmeticTarget::E => self.registers.e,
+            ArithmeticTarget::H => self.registers.h,
+            ArithmeticTarget::L => self.registers.l,
+        }
     }
     fn add(&mut self, value: u8) -> u8 {
         let (new_value, overflowed) = self.registers.a.overflowing_add(value);
@@ -381,6 +317,16 @@ impl Cpu {
     }
     fn add_carry_a(&mut self, value: u8) {
         self.registers.a = self.add_carry(value);
+    }
+    fn addhl(&mut self, value: u8) {
+        let (new_value, overflowed) = self.registers.get_hl().overflowing_add(value as u16);
+
+        self.registers.set_hl(new_value);
+
+        self.registers.f.zero = new_value == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.carry = overflowed;
+        self.registers.f.half_carry = (self.registers.a & 0xF) + (value & 0xF) > 0xF;
     }
     fn and_a(&mut self, value: u8) {
         let new_value = self.registers.a & value;
