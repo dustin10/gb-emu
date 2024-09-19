@@ -1,3 +1,4 @@
+/// Represents the registers on the cpu.
 #[derive(Clone, Copy, Debug, Default)]
 struct Registers {
     a: u8,
@@ -11,38 +12,47 @@ struct Registers {
 }
 
 impl Registers {
+    /// Returns the combined value of the a and f registers.
     fn get_af(&self) -> u16 {
         let f: u8 = self.f.into();
 
         (self.a as u16) << 8 | f as u16
     }
+    /// Sets the values of the a and f registers by treating them as one 16 byte value.
     fn set_af(&mut self, value: u16) {
         self.a = ((value & 0xFF00) >> 8) as u8;
         self.f = ((value & 0xFF) as u8).into();
     }
+    /// Returns the combined value of the b and c registers.
     fn get_bc(&self) -> u16 {
         (self.b as u16) << 8 | self.c as u16
     }
+    /// Sets the values of the b and c registers by treating them as one 16 byte value.
     fn set_bc(&mut self, value: u16) {
         self.b = ((value & 0xFF00) >> 8) as u8;
         self.c = (value & 0xFF) as u8;
     }
+    /// Returns the combined value of the d and e registers.
     fn get_de(&self) -> u16 {
         (self.d as u16) << 8 | self.e as u16
     }
+    /// Sets the values of the d and e registers by treating them as one 16 byte value.
     fn set_de(&mut self, value: u16) {
         self.d = ((value & 0xFF00) >> 8) as u8;
         self.e = (value & 0xFF) as u8;
     }
+    /// Returns the combined value of the h and l registers.
     fn get_hl(&self) -> u16 {
         (self.h as u16) << 8 | self.l as u16
     }
+    /// Sets the values of the h and l registers by treating them as one 16 byte value.
     fn set_hl(&mut self, value: u16) {
         self.h = ((value & 0xFF00) >> 8) as u8;
         self.l = (value & 0xFF) as u8;
     }
 }
 
+/// Eases the special handling required for the `f` register.
 #[derive(Clone, Copy, Debug, Default)]
 struct FlagsRegister {
     zero: bool,
@@ -90,6 +100,34 @@ impl From<u8> for FlagsRegister {
     }
 }
 
+/// Enumerates the target registers for arithmetic operations executed by the [Cpu].
+#[derive(Debug)]
+pub enum ArithmeticTarget {
+    A,
+    B,
+    C,
+    D,
+    E,
+    H,
+    L,
+}
+
+/// Enumerates the target registers for increment and decrement operations executed by the [Cpu].
+#[derive(Debug)]
+pub enum IncDecTarget {
+    A,
+    B,
+    C,
+    D,
+    E,
+    H,
+    L,
+    AF,
+    BC,
+    DE,
+    HL,
+}
+
 /// Enumeration of the instructions the [Cpu] is capable of executing.
 #[derive(Debug)]
 pub enum Instruction {
@@ -123,7 +161,7 @@ pub enum Instruction {
     RLA,
     /// Rorate left - bit rotate a specific register left by 1 not through the carry flag
     RLC(ArithmeticTarget),
-    /// Rotate right) - bit rotate a specific register right by 1 through the carry flag
+    /// Rotate right - bit rotate a specific register right by 1 through the carry flag
     RR(ArithmeticTarget),
     /// Rotate right A register - bit rotate A register right through the carry flag
     RRA,
@@ -153,33 +191,15 @@ pub enum Instruction {
     XOR(ArithmeticTarget),
 }
 
-/// Enumerates the target registers for arithmetic operations executed by the [Cpu].
-#[derive(Debug)]
-pub enum ArithmeticTarget {
-    A,
-    B,
-    C,
-    D,
-    E,
-    H,
-    L,
-}
-
-#[derive(Debug)]
-pub enum IncDecTarget {
-    A,
-    B,
-    C,
-    D,
-    E,
-    H,
-    L,
-    /*
-    AF,
-    BC,
-    DE,
-    HL,
-    */
+impl Instruction {
+    fn from_byte(byte: u8) -> Option<Instruction> {
+        match byte {
+            0x02 => Some(Instruction::INC(IncDecTarget::BC)),
+            0x13 => Some(Instruction::INC(IncDecTarget::DE)),
+            // TODO: add mapping for rest of instructions
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -190,6 +210,9 @@ struct MemoryBus {
 impl MemoryBus {
     fn read_byte(&self, address: u16) -> u8 {
         self.data[address as usize]
+    }
+    fn write_byte(&mut self, address: u16, byte: u8) {
+        self.data[address as usize] = byte;
     }
 }
 
@@ -202,17 +225,26 @@ impl Default for MemoryBus {
 #[derive(Debug, Default)]
 pub struct Cpu {
     registers: Registers,
-    counter: u16,
+    prog_counter: u16,
+    _stack_ptr: u16,
     mem_bus: MemoryBus,
 }
 
 impl Cpu {
     /// Reads and executes the next instruction based on the current program counter.
     pub fn step(&mut self) {
-        todo!()
+        let instruction_byte = self.mem_bus.read_byte(self.prog_counter);
+
+        let next_pc = if let Some(instruction) = Instruction::from_byte(instruction_byte) {
+            self.execute(instruction)
+        } else {
+            panic!("unkown instruction encountered: 0x{:x}", instruction_byte);
+        };
+
+        self.prog_counter = next_pc;
     }
     /// Executes the specified [Instruction].
-    pub fn execute(&mut self, instruction: Instruction) {
+    pub fn execute(&mut self, instruction: Instruction) -> u16 {
         match instruction {
             Instruction::ADC(target) => match target {
                 ArithmeticTarget::A => self.add_carry_a(self.registers.a),
@@ -280,8 +312,47 @@ impl Cpu {
             Instruction::RL(target) => self.rl(target),
             Instruction::RLA => self.rl(ArithmeticTarget::A),
             Instruction::RLC(target) => self.rlc(target),
-            _ => todo!(),
+            Instruction::RR(target) => self.rr(target),
+            Instruction::RRA => self.rr(ArithmeticTarget::A),
+            Instruction::RRC(target) => self.rrc(target),
+            Instruction::RRCA => self.rrc(ArithmeticTarget::A),
+            Instruction::RRLA => self.rrla(),
+            Instruction::SBC(target) => match target {
+                ArithmeticTarget::A => self.sbc(self.registers.a),
+                ArithmeticTarget::B => self.sbc(self.registers.b),
+                ArithmeticTarget::C => self.sbc(self.registers.c),
+                ArithmeticTarget::D => self.sbc(self.registers.d),
+                ArithmeticTarget::E => self.sbc(self.registers.e),
+                ArithmeticTarget::H => self.sbc(self.registers.h),
+                ArithmeticTarget::L => self.sbc(self.registers.l),
+            },
+            Instruction::SCF => self.scf(),
+            Instruction::SET(target, bit) => self.set(target, bit),
+            Instruction::SLA(target) => self.sla(target),
+            Instruction::SRA(target) => self.sra(target),
+            Instruction::SRL(target) => self.srl(target),
+            Instruction::SUB(target) => match target {
+                ArithmeticTarget::A => self.sub(self.registers.a),
+                ArithmeticTarget::B => self.sub(self.registers.b),
+                ArithmeticTarget::C => self.sub(self.registers.c),
+                ArithmeticTarget::D => self.sub(self.registers.d),
+                ArithmeticTarget::E => self.sub(self.registers.e),
+                ArithmeticTarget::H => self.sub(self.registers.h),
+                ArithmeticTarget::L => self.sub(self.registers.l),
+            },
+            Instruction::SWAP(target) => self.swap(target),
+            Instruction::XOR(target) => match target {
+                ArithmeticTarget::A => self.xor(self.registers.a),
+                ArithmeticTarget::B => self.xor(self.registers.b),
+                ArithmeticTarget::C => self.xor(self.registers.c),
+                ArithmeticTarget::D => self.xor(self.registers.d),
+                ArithmeticTarget::E => self.xor(self.registers.e),
+                ArithmeticTarget::H => self.xor(self.registers.h),
+                ArithmeticTarget::L => self.xor(self.registers.l),
+            },
         }
+
+        self.prog_counter.wrapping_add(1)
     }
     fn add(&mut self, value: u8) -> u8 {
         let (new_value, overflowed) = self.registers.a.overflowing_add(value);
@@ -376,6 +447,7 @@ impl Cpu {
                 self.registers.l -= 1;
                 self.registers.l
             }
+            _ => todo!(),
         };
 
         self.registers.f.zero = value == 0;
@@ -412,6 +484,7 @@ impl Cpu {
                 self.registers.l += 1;
                 self.registers.l
             }
+            _ => todo!(),
         };
 
         self.registers.f.zero = value == 0;
@@ -419,7 +492,7 @@ impl Cpu {
         self.registers.f.half_carry = (value & 0x0F) == 0x00;
     }
     fn or(&mut self, value: u8) {
-        self.registers.a = self.registers.a | value;
+        self.registers.a |= value;
 
         self.registers.f.zero = self.registers.a == 0;
         self.registers.f.subtract = false;
@@ -428,55 +501,247 @@ impl Cpu {
     }
     fn reset(&mut self, target: ArithmeticTarget, bit: u8) {
         match target {
-            ArithmeticTarget::A => self.registers.a = self.registers.a & !(1 << bit),
-            ArithmeticTarget::B => self.registers.b = self.registers.b & !(1 << bit),
-            ArithmeticTarget::C => self.registers.c = self.registers.c & !(1 << bit),
-            ArithmeticTarget::D => self.registers.d = self.registers.d & !(1 << bit),
-            ArithmeticTarget::E => self.registers.e = self.registers.e & !(1 << bit),
-            ArithmeticTarget::H => self.registers.h = self.registers.h & !(1 << bit),
-            ArithmeticTarget::L => self.registers.l = self.registers.l & !(1 << bit),
+            ArithmeticTarget::A => self.registers.a &= !(1 << bit),
+            ArithmeticTarget::B => self.registers.b &= !(1 << bit),
+            ArithmeticTarget::C => self.registers.c &= !(1 << bit),
+            ArithmeticTarget::D => self.registers.d &= !(1 << bit),
+            ArithmeticTarget::E => self.registers.e &= !(1 << bit),
+            ArithmeticTarget::H => self.registers.h &= !(1 << bit),
+            ArithmeticTarget::L => self.registers.l &= !(1 << bit),
         };
     }
     fn rl(&mut self, target: ArithmeticTarget) {
         let value = match target {
-            ArithmeticTarget::A => self.registers.a,
-            ArithmeticTarget::B => self.registers.b,
-            ArithmeticTarget::C => self.registers.c,
-            ArithmeticTarget::D => self.registers.d,
-            ArithmeticTarget::E => self.registers.e,
-            ArithmeticTarget::H => self.registers.h,
-            ArithmeticTarget::L => self.registers.l,
+            ArithmeticTarget::A => &mut self.registers.a,
+            ArithmeticTarget::B => &mut self.registers.b,
+            ArithmeticTarget::C => &mut self.registers.c,
+            ArithmeticTarget::D => &mut self.registers.d,
+            ArithmeticTarget::E => &mut self.registers.e,
+            ArithmeticTarget::H => &mut self.registers.h,
+            ArithmeticTarget::L => &mut self.registers.l,
         };
 
         let carry_value = if self.registers.f.carry { 1 } else { 0 };
-        let will_carry = (value & (1 << 7)) != 0;
+        let will_carry = (*value & (1 << 7)) != 0;
 
-        let mut new_value = value << 1;
+        let mut new_value = *value << 1;
         new_value |= carry_value;
 
-        match target {
-            ArithmeticTarget::A => self.registers.a = new_value,
-            ArithmeticTarget::B => self.registers.b = new_value,
-            ArithmeticTarget::C => self.registers.c = new_value,
-            ArithmeticTarget::D => self.registers.d = new_value,
-            ArithmeticTarget::E => self.registers.e = new_value,
-            ArithmeticTarget::H => self.registers.h = new_value,
-            ArithmeticTarget::L => self.registers.l = new_value,
-        };
+        *value = new_value;
 
         self.registers.f.zero = new_value == 0;
         self.registers.f.subtract = false;
         self.registers.f.carry = will_carry;
         self.registers.f.half_carry = false;
     }
-    fn rlc(&mut self, _target: ArithmeticTarget) {
-        //u8 carry_flag = check_bit(value, 7);
-        //u8 truncated_bit = check_bit(value, 7);
-        //u8 result = static_cast<u8>((value << 1) | truncated_bit);
+    fn rlc(&mut self, target: ArithmeticTarget) {
+        let value = match target {
+            ArithmeticTarget::A => &mut self.registers.a,
+            ArithmeticTarget::B => &mut self.registers.b,
+            ArithmeticTarget::C => &mut self.registers.c,
+            ArithmeticTarget::D => &mut self.registers.d,
+            ArithmeticTarget::E => &mut self.registers.e,
+            ArithmeticTarget::H => &mut self.registers.h,
+            ArithmeticTarget::L => &mut self.registers.l,
+        };
+
+        let will_carry = (*value & (1 << 7)) != 0;
+        let truncated_bit = *value & (1 << 7);
+        let new_value = (*value << 1) | truncated_bit;
+
+        *value = new_value;
+
+        self.registers.f.zero = new_value == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.carry = will_carry;
+        self.registers.f.half_carry = false;
+    }
+    fn rr(&mut self, target: ArithmeticTarget) {
+        let value = match target {
+            ArithmeticTarget::A => &mut self.registers.a,
+            ArithmeticTarget::B => &mut self.registers.b,
+            ArithmeticTarget::C => &mut self.registers.c,
+            ArithmeticTarget::D => &mut self.registers.d,
+            ArithmeticTarget::E => &mut self.registers.e,
+            ArithmeticTarget::H => &mut self.registers.h,
+            ArithmeticTarget::L => &mut self.registers.l,
+        };
+
+        let carry_value = if self.registers.f.carry { 1 } else { 0 };
+        let will_carry = (*value & (1 << 0)) != 0;
+
+        let mut new_value = *value >> 1;
+        new_value |= carry_value << 7;
+
+        self.registers.f.zero = new_value == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.carry = will_carry;
+        self.registers.f.half_carry = false;
+    }
+    fn rrc(&mut self, target: ArithmeticTarget) {
+        let value = match target {
+            ArithmeticTarget::A => &mut self.registers.a,
+            ArithmeticTarget::B => &mut self.registers.b,
+            ArithmeticTarget::C => &mut self.registers.c,
+            ArithmeticTarget::D => &mut self.registers.d,
+            ArithmeticTarget::E => &mut self.registers.e,
+            ArithmeticTarget::H => &mut self.registers.h,
+            ArithmeticTarget::L => &mut self.registers.l,
+        };
+
+        let will_carry = (*value & (1 << 0)) != 0;
+        let truncated_bit = *value & (1 << 0);
+
+        let new_value = (*value >> 1) | (truncated_bit << 7);
+
+        *value = new_value;
+
+        self.registers.f.zero = new_value == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.carry = will_carry;
+        self.registers.f.half_carry = false;
+    }
+    fn rrla(&mut self) {
+        let value = self.registers.a;
+
+        let will_carry = (value & (1 << 7)) != 0;
+        let truncated_bit = value & (1 << 7);
+
+        let new_value = (value >> 1) | (truncated_bit << 7);
+
+        self.registers.a = new_value;
+
+        self.registers.f.zero = new_value == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.carry = will_carry;
+        self.registers.f.half_carry = false;
+    }
+    fn sbc(&mut self, value: u8) {
+        //u8 carry = f.flag_carry_value();
+        //u8 reg = a.value();
         //
-        //set_flag_carry(carry_flag);
+        //int result_full = reg - value - carry;
+        //u8 result = static_cast<u8>(result_full);
+        //
         //set_flag_zero(result == 0);
+        //set_flag_subtract(true);
+        //set_flag_carry(result_full < 0);
+        //set_flag_half_carry(((reg & 0xf) - (value & 0xf) - carry) < 0);
+        //
+        //a.set(result);
+    }
+    fn scf(&mut self) {
+        self.registers.f.carry = true;
+    }
+    fn set(&mut self, target: ArithmeticTarget, bit: u8) {
+        let value = match target {
+            ArithmeticTarget::A => &mut self.registers.a,
+            ArithmeticTarget::B => &mut self.registers.b,
+            ArithmeticTarget::C => &mut self.registers.c,
+            ArithmeticTarget::D => &mut self.registers.d,
+            ArithmeticTarget::E => &mut self.registers.e,
+            ArithmeticTarget::H => &mut self.registers.h,
+            ArithmeticTarget::L => &mut self.registers.l,
+        };
+
+        *value |= 1 << bit;
+    }
+    fn sla(&mut self, target: ArithmeticTarget) {
+        let value = match target {
+            ArithmeticTarget::A => &mut self.registers.a,
+            ArithmeticTarget::B => &mut self.registers.b,
+            ArithmeticTarget::C => &mut self.registers.c,
+            ArithmeticTarget::D => &mut self.registers.d,
+            ArithmeticTarget::E => &mut self.registers.e,
+            ArithmeticTarget::H => &mut self.registers.h,
+            ArithmeticTarget::L => &mut self.registers.l,
+        };
+
+        let will_carry = (*value & (1 << 7)) != 0;
+        let new_value = *value << 1;
+
+        *value = new_value;
+
+        self.registers.f.zero = new_value == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.carry = will_carry;
+        self.registers.f.half_carry = false;
+    }
+    fn sra(&mut self, target: ArithmeticTarget) {
+        //u8 carry_bit = check_bit(value, 0);
+        //u8 top_bit = check_bit(value, 7);
+        //
+        //u8 result = static_cast<u8>(value >> 1);
+        //result = bitwise::set_bit_to(result, 7, top_bit);
+        //
+        //set_flag_zero(result == 0);
+        //set_flag_carry(carry_bit);
         //set_flag_half_carry(false);
         //set_flag_subtract(false);
+
+        let _value = match target {
+            ArithmeticTarget::A => &mut self.registers.a,
+            ArithmeticTarget::B => &mut self.registers.b,
+            ArithmeticTarget::C => &mut self.registers.c,
+            ArithmeticTarget::D => &mut self.registers.d,
+            ArithmeticTarget::E => &mut self.registers.e,
+            ArithmeticTarget::H => &mut self.registers.h,
+            ArithmeticTarget::L => &mut self.registers.l,
+        };
+    }
+    fn srl(&mut self, target: ArithmeticTarget) {
+        let value = match target {
+            ArithmeticTarget::A => &mut self.registers.a,
+            ArithmeticTarget::B => &mut self.registers.b,
+            ArithmeticTarget::C => &mut self.registers.c,
+            ArithmeticTarget::D => &mut self.registers.d,
+            ArithmeticTarget::E => &mut self.registers.e,
+            ArithmeticTarget::H => &mut self.registers.h,
+            ArithmeticTarget::L => &mut self.registers.l,
+        };
+
+        let will_carry = (*value & (1 << 0)) != 0;
+        let new_value = *value >> 1;
+
+        *value = new_value;
+
+        self.registers.f.zero = new_value == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.half_carry = false;
+        self.registers.f.carry = will_carry;
+    }
+    fn sub(&mut self, value: u8) {
+        let curr_value = self.registers.a;
+        let new_value = curr_value.wrapping_sub(value);
+
+        self.registers.a = new_value;
+
+        self.registers.f.zero = new_value == 0;
+        self.registers.f.subtract = true;
+        self.registers.f.half_carry = (curr_value as i16 & 0xF) - (value as i16 & 0xF) < 0;
+        self.registers.f.carry = curr_value < value;
+    }
+    fn swap(&mut self, _target: ArithmeticTarget) {
+        //using bitwise::compose_nibbles;
+        //
+        //u8 lower_nibble = value & 0x0F;
+        //u8 upper_nibble = (value & 0xF0) >> 4;
+        //
+        //u8 result = compose_nibbles(lower_nibble, upper_nibble);
+        //
+        //set_flag_zero(result == 0);
+        //set_flag_subtract(false);
+        //set_flag_half_carry(false);
+        //set_flag_carry(false);
+    }
+    fn xor(&mut self, value: u8) {
+        let new_value = self.registers.a ^ value;
+
+        self.registers.a = new_value;
+
+        self.registers.f.zero = new_value == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.half_carry = false;
+        self.registers.f.carry = false;
     }
 }
