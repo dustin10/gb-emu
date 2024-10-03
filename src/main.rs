@@ -1,5 +1,5 @@
-use gb_emu::gb::cpu::Cpu;
+use gb_emu::gb::Emulator;
 
 fn main() {
-    let _cpu = Cpu::default();
+    let _emu = Emulator::new();
 }

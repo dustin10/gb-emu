@@ -1,4 +1,4 @@
-use crate::gb::memory::MemoryBus;
+use crate::gb::mem::Memory;
 
 /// Represents the registers on the cpu.
 #[derive(Clone, Copy, Debug, Default)]
@@ -13,7 +13,6 @@ struct Registers {
     l: u8,
 }
 
-#[allow(dead_code)]
 impl Registers {
     /// Returns the combined value of the a and f registers.
     fn get_af(&self) -> u16 {
@@ -77,7 +76,7 @@ const SUBTRACT_FLAG_BYTE_POSITION: u8 = 6;
 const ZERO_FLAG_BYTE_POSITION: u8 = 7;
 
 impl From<Flags> for u8 {
-    /// Transforms a [`Flags`] into a [`u8`].
+    /// Transforms a [`Flags`] value into a [`u8`].
     fn from(flag: Flags) -> Self {
         (if flag.zero { 1 } else { 0 }) << ZERO_FLAG_BYTE_POSITION
             | (if flag.subtract { 1 } else { 0 }) << SUBTRACT_FLAG_BYTE_POSITION
@@ -87,12 +86,12 @@ impl From<Flags> for u8 {
 }
 
 impl From<u8> for Flags {
-    /// Transforms a [`u8`] into a [`Flags`].
+    /// Transforms a [`u8`] value into a [`Flags`].
     fn from(byte: u8) -> Self {
-        let zero = ((byte >> ZERO_FLAG_BYTE_POSITION) & 0b1) != 0;
-        let subtract = ((byte >> SUBTRACT_FLAG_BYTE_POSITION) & 0b1) != 0;
-        let half_carry = ((byte >> HALF_CARRY_FLAG_BYTE_POSITION) & 0b1) != 0;
-        let carry = ((byte >> CARRY_FLAG_BYTE_POSITION) & 0b1) != 0;
+        let zero = ((byte >> ZERO_FLAG_BYTE_POSITION) & 1) != 0;
+        let subtract = ((byte >> SUBTRACT_FLAG_BYTE_POSITION) & 1) != 0;
+        let half_carry = ((byte >> HALF_CARRY_FLAG_BYTE_POSITION) & 1) != 0;
+        let carry = ((byte >> CARRY_FLAG_BYTE_POSITION) & 1) != 0;
 
         Self {
             zero,
@@ -132,6 +131,7 @@ pub enum IncDecTarget {
 }
 
 /// Enumeration of the instructions the [`Cpu`] is capable of executing.
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Instruction {
     /// Add with carry - just like ADD except that the value of the carry flag is also added to the number
@@ -197,7 +197,7 @@ pub enum Instruction {
 impl Instruction {
     fn from_byte(byte: u8) -> Option<Instruction> {
         match byte {
-            0x02 => Some(Instruction::INC(IncDecTarget::BC)),
+            0x03 => Some(Instruction::INC(IncDecTarget::BC)),
             0x13 => Some(Instruction::INC(IncDecTarget::DE)),
             // TODO: add mapping for rest of instructions
             _ => None,
@@ -210,13 +210,12 @@ pub struct Cpu {
     registers: Registers,
     prog_counter: u16,
     _stack_ptr: u16,
-    mem_bus: MemoryBus,
 }
 
 impl Cpu {
     /// Reads and executes the next instruction based on the current program counter.
-    pub fn step(&mut self) {
-        let instruction_byte = self.mem_bus.read_byte(self.prog_counter);
+    pub fn step(&mut self, memory: &Memory) {
+        let instruction_byte = memory.read_byte(self.prog_counter);
 
         let next_pc = if let Some(instruction) = Instruction::from_byte(instruction_byte) {
             self.execute(instruction)
