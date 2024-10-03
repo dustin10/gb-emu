@@ -1,8 +1,11 @@
+/// Defines the maximum size of the addressable memory for the emulator.
+const ADDRESSABLE_MEMORY: usize = 0xFFFF;
+
 /// [`Memory`] represents the emulator memory bus
 #[derive(Debug)]
 pub struct Memory {
     /// Raw bytes of data contained in memory.
-    data: [u8; 0xFFFF],
+    data: [u8; ADDRESSABLE_MEMORY],
 }
 
 impl Memory {
@@ -31,6 +34,8 @@ impl Memory {
 impl Default for Memory {
     /// Creates a default [`Memory`] which has all data set to zero.
     fn default() -> Self {
-        Self { data: [0; 0xFFFF] }
+        Self {
+            data: [0; ADDRESSABLE_MEMORY],
+        }
     }
 }

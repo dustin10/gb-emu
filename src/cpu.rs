@@ -1,4 +1,4 @@
-use crate::gb::mem::Memory;
+use crate::mem::Memory;
 
 /// Represents the registers on the cpu.
 #[derive(Clone, Copy, Debug, Default)]
@@ -208,14 +208,14 @@ impl Instruction {
 #[derive(Debug, Default)]
 pub struct Cpu {
     registers: Registers,
-    prog_counter: u16,
-    _stack_ptr: u16,
+    program_counter: u16,
+    _stack_pointer: u16,
 }
 
 impl Cpu {
     /// Reads and executes the next instruction based on the current program counter.
     pub fn step(&mut self, memory: &Memory) {
-        let instruction_byte = memory.read_byte(self.prog_counter);
+        let instruction_byte = memory.read_byte(self.program_counter);
 
         let next_pc = if let Some(instruction) = Instruction::from_byte(instruction_byte) {
             self.execute(instruction)
@@ -223,7 +223,7 @@ impl Cpu {
             panic!("unkown instruction encountered: 0x{:x}", instruction_byte);
         };
 
-        self.prog_counter = next_pc;
+        self.program_counter = next_pc;
     }
     /// Executes the specified [`Instruction`].
     pub fn execute(&mut self, instruction: Instruction) -> u16 {
@@ -259,7 +259,7 @@ impl Cpu {
             Instruction::XOR(target) => self.xor(self.target_value(target)),
         }
 
-        self.prog_counter.wrapping_add(1)
+        self.program_counter.wrapping_add(1)
     }
     fn target_value(&self, target: ArithmeticTarget) -> u8 {
         match target {
