@@ -8,11 +8,12 @@ struct Registers {
     c: u8,
     d: u8,
     e: u8,
-    f: FlagsRegister,
+    f: Flags,
     h: u8,
     l: u8,
 }
 
+#[allow(dead_code)]
 impl Registers {
     /// Returns the combined value of the a and f registers.
     fn get_af(&self) -> u16 {
@@ -56,28 +57,28 @@ impl Registers {
 
 /// Eases the special handling required for the `f` register.
 #[derive(Clone, Copy, Debug, Default)]
-struct FlagsRegister {
+struct Flags {
     zero: bool,
     subtract: bool,
     half_carry: bool,
     carry: bool,
 }
 
-/// Byte position of the carry flag in the [u8] representation of a [FlagsRegister].
+/// Byte position of the carry flag in the [`u8`] representation of a [`Flags`].
 const CARRY_FLAG_BYTE_POSITION: u8 = 4;
 
-/// Byte position of the half carry flag in the [u8] representation of a [FlagsRegister].
+/// Byte position of the half carry flag in the [`u8`] representation of a [`Flags`].
 const HALF_CARRY_FLAG_BYTE_POSITION: u8 = 5;
 
-/// Byte position of the subtract flag in the [u8] representation of a [FlagsRegister].
+/// Byte position of the subtract flag in the [`u8`] representation of a [`Flags`].
 const SUBTRACT_FLAG_BYTE_POSITION: u8 = 6;
 
-/// Byte position of the zero flag in the [u8] representation of a [FlagsRegister].
+/// Byte position of the zero flag in the [`u8`] representation of a [`Flags`].
 const ZERO_FLAG_BYTE_POSITION: u8 = 7;
 
-impl From<FlagsRegister> for u8 {
-    /// Transforms a [FlagsRegister] into a [u8].
-    fn from(flag: FlagsRegister) -> u8 {
+impl From<Flags> for u8 {
+    /// Transforms a [`Flags`] into a [`u8`].
+    fn from(flag: Flags) -> Self {
         (if flag.zero { 1 } else { 0 }) << ZERO_FLAG_BYTE_POSITION
             | (if flag.subtract { 1 } else { 0 }) << SUBTRACT_FLAG_BYTE_POSITION
             | (if flag.half_carry { 1 } else { 0 }) << HALF_CARRY_FLAG_BYTE_POSITION
@@ -85,15 +86,15 @@ impl From<FlagsRegister> for u8 {
     }
 }
 
-impl From<u8> for FlagsRegister {
-    /// Transforms a [u8] into a [FlagsRegister].
+impl From<u8> for Flags {
+    /// Transforms a [`u8`] into a [`Flags`].
     fn from(byte: u8) -> Self {
         let zero = ((byte >> ZERO_FLAG_BYTE_POSITION) & 0b1) != 0;
         let subtract = ((byte >> SUBTRACT_FLAG_BYTE_POSITION) & 0b1) != 0;
         let half_carry = ((byte >> HALF_CARRY_FLAG_BYTE_POSITION) & 0b1) != 0;
         let carry = ((byte >> CARRY_FLAG_BYTE_POSITION) & 0b1) != 0;
 
-        FlagsRegister {
+        Self {
             zero,
             subtract,
             half_carry,
@@ -102,8 +103,8 @@ impl From<u8> for FlagsRegister {
     }
 }
 
-/// Enumerates the target registers for arithmetic operations executed by the [Cpu].
-#[derive(Debug)]
+/// Enumerates the target registers for arithmetic operations executed by the [`Cpu`].
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ArithmeticTarget {
     A,
     B,
@@ -114,8 +115,8 @@ pub enum ArithmeticTarget {
     L,
 }
 
-/// Enumerates the target registers for increment and decrement operations executed by the [Cpu].
-#[derive(Debug)]
+/// Enumerates the target registers for increment and decrement operations executed by the [`Cpu`].
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IncDecTarget {
     A,
     B,
@@ -130,8 +131,8 @@ pub enum IncDecTarget {
     HL,
 }
 
-/// Enumeration of the instructions the [Cpu] is capable of executing.
-#[derive(Debug)]
+/// Enumeration of the instructions the [`Cpu`] is capable of executing.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Instruction {
     /// Add with carry - just like ADD except that the value of the carry flag is also added to the number
     ADC(ArithmeticTarget),
@@ -225,7 +226,7 @@ impl Cpu {
 
         self.prog_counter = next_pc;
     }
-    /// Executes the specified [Instruction].
+    /// Executes the specified [`Instruction`].
     pub fn execute(&mut self, instruction: Instruction) -> u16 {
         match instruction {
             Instruction::ADC(target) => self.add_carry_a(self.target_value(target)),
@@ -544,7 +545,7 @@ impl Cpu {
         self.registers.f.carry = will_carry;
         self.registers.f.half_carry = false;
     }
-    fn sbc(&mut self, value: u8) {
+    fn sbc(&mut self, _value: u8) {
         //u8 carry = f.flag_carry_value();
         //u8 reg = a.value();
         //
