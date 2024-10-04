@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::mem::Memory;
 
 /// Represents the registers on the cpu. Allows for easy manipulation of combined registers.
@@ -66,13 +68,17 @@ const FLAGS_SUBTRACT_BIT_POSITION: u8 = 6;
 /// Bit position of the zero flag in the [`u8`] representation of [`Flags`].
 const FLAGS_ZERO_BIT_POSITION: u8 = 7;
 
-/// Eases the special handling required for the `f` register which uses the top 4 bits for the
+/// Eases the special handling required for the `F` register which uses the top 4 bits for the
 /// following flags.
 ///
-/// * Carry
-/// * Half Carry
-/// * Subtract
-/// * Zero
+/// 76543210
+/// --------
+/// 00000000
+/// ||||
+/// |||-- Carry
+/// ||--- Half Carry
+/// |---- Subtract
+/// ----- Zero
 #[derive(Clone, Copy, Debug, Default)]
 struct Flags(u8);
 
@@ -160,18 +166,67 @@ enum Target {
     BC,
     DE,
     HL,
+    SP,
+}
+
+impl Display for Target {
+    /// Writes a string representation of the [`Target`] to the formatter.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("{:?}", self))
+    }
 }
 
 /// Enumeration of the operations the [`Cpu`] is capable of executing.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Operation {
+    /// Adds the value in the [`Target`] register to the value in the HL register and stores it
+    /// back to the HL register.
+    ADDHL { target: Target },
+    /// Decrements the value in the [`Target`] register by one.
     DEC { target: Target },
+    /// Increments the value in the [`Target`] register by one.
     INC { target: Target },
-    LDN8 { target: Target, value: u8 },
+    /// Loads the value in the [`Target`] register and stores it at the address in memory.
+    LDA16 { address: u16, target: Target },
+    /// Loads the [`u16`] value from memory and stores it in the [`Target`] register.
     LDN16 { target: Target, value: u16 },
+    /// Loads the [`u8`] value from memory and stores it in the [`Target`] register.
+    LDN8 { target: Target, value: u8 },
+    /// Loads the value from the A register and stores it in the memory address corresponding to
+    /// the value in the [`Target`] register.
     LDA { target: Target },
+    /// No operation.
     NOP,
+    /// Prefix op-code which causes the subsequent byte to represent a different set of
+    /// instructions.
+    PREFIX,
+    /// Bit rotate the A register register left by 1 not through the carry flag.
+    RLCA,
+}
+
+impl Display for Operation {
+    /// Writes a string representation of the [`Operation`] to the formatter.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Operation::ADDHL { target } => f.write_fmt(format_args!("ADD HL, {}", target)),
+            Operation::DEC { target } => f.write_fmt(format_args!("DEC {}", target)),
+            Operation::INC { target } => f.write_fmt(format_args!("INC {}", target)),
+            Operation::LDA16 { address, target } => {
+                f.write_fmt(format_args!("LD [{:#6x}] {}", address, target))
+            }
+            Operation::LDN16 { target, value } => {
+                f.write_fmt(format_args!("LD {}, {:#6x}", target, value))
+            }
+            Operation::LDN8 { target, value } => {
+                f.write_fmt(format_args!("LD {}, {:#4x}", target, value))
+            }
+            Operation::LDA { target } => f.write_fmt(format_args!("LD [{}], A", target)),
+            Operation::NOP => f.write_str("NOP"),
+            Operation::PREFIX => f.write_str("PREFIX"),
+            Operation::RLCA => f.write_str("RLCA"),
+        }
+    }
 }
 
 /// An instruction that is ready to be executed by the [`Cpu`].
@@ -196,6 +251,15 @@ impl Instruction {
     }
 }
 
+impl Display for Instruction {
+    /// Writes a string representation of the [`Instruction`] to the formatter. This implementation
+    /// simply defers to the [`Display`] trait implementation for the [`Operation`] owned by the
+    /// [`Instruction`].
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.operation.fmt(f)
+    }
+}
+
 /// Represents the central processing unit of the Game Boy system. It is responsible for reading,
 /// decoding and executing instructions which drive the game.
 #[derive(Debug, Default)]
@@ -206,6 +270,8 @@ pub struct Cpu {
     pc: u16,
     /// Stack pointer.
     sp: u16,
+    /// Indicates whether the next instruction read was prefixed with 0xCB or not.
+    prefixed: bool,
 }
 
 impl Cpu {
@@ -217,10 +283,17 @@ impl Cpu {
     pub fn step(&mut self, memory: &Memory) {
         let op_code = memory.read_byte(self.pc);
 
-        if let Some(instruction) = self.decode(op_code, memory) {
-            self.pc = self.execute(&instruction);
+        let instruction = if self.prefixed {
+            self.decode_prefixed(op_code, memory)
         } else {
-            tracing::warn!("encountered unkown instruction: 0x{:x}", op_code);
+            self.decode(op_code, memory)
+        };
+
+        if let Some(instruction) = instruction {
+            let new_pc = self.execute(&instruction);
+            self.pc = new_pc;
+        } else {
+            tracing::warn!("encountered unknown instruction: 0x{:x}", op_code);
         };
     }
     /// Transforms the given op code into an [`Instruction`] which can be executed by the [`Cpu`].
@@ -265,13 +338,45 @@ impl Cpu {
                     },
                 ))
             }
+            0x07 => Some(Instruction::new(1, 4, Operation::RLCA)),
+            0x08 => {
+                let low = memory.read_byte(self.pc + 1);
+                let high = memory.read_byte(self.pc + 2);
+                let address = (high as u16) << 8 | low as u16;
+
+                Some(Instruction::new(
+                    3,
+                    20,
+                    Operation::LDA16 {
+                        address,
+                        target: Target::SP,
+                    },
+                ))
+            }
+            0x09 => Some(Instruction::new(
+                1,
+                8,
+                Operation::ADDHL { target: Target::BC },
+            )),
+            0xCB => Some(Instruction::new(1, 4, Operation::PREFIX)),
             _ => None,
         }
     }
+    /// Transforms the given prefixed op code into an [`Instruction`] which can be executed by the
+    /// [`Cpu`]. An op code is prefixed if the preceding op code byte was 0xCB.
+    fn decode_prefixed(&self, op_code: u8, memory: &Memory) -> Option<Instruction> {
+        todo!()
+    }
     /// Executes the specified [`Instruction`].
     fn execute(&mut self, instruction: &Instruction) -> u16 {
-        // TODO: match on instruction.operation and execute
+        tracing::debug!("executing instruction '{:?}'", instruction);
 
+        match instruction.operation {
+            Operation::PREFIX => {}
+            _ => todo!(),
+        }
+
+        self.prefixed = instruction.operation == Operation::PREFIX;
         self.pc.wrapping_add(instruction.num_bytes)
     }
 }
@@ -333,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_nop() {
+    fn test_cpu_decode_nop() {
         let op_code: u8 = 0x00;
 
         let memory = Memory::new();
@@ -347,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_ld_bc_n16() {
+    fn test_cpu_decode_ld_bc_n16() {
         let op_code: u8 = 0x01;
 
         {
@@ -407,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_ld_bc_a() {
+    fn test_cpu_decode_ld_bc_a() {
         let op_code: u8 = 0x02;
 
         let memory = Memory::new();
@@ -421,7 +526,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_inc_bc() {
+    fn test_cpu_decode_inc_bc() {
         let op_code: u8 = 0x03;
 
         let memory = Memory::new();
@@ -435,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_inc_b() {
+    fn test_cpu_decode_inc_b() {
         let op_code: u8 = 0x04;
 
         let memory = Memory::new();
@@ -449,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_dec_b() {
+    fn test_cpu_decode_dec_b() {
         let op_code: u8 = 0x05;
 
         let memory = Memory::new();
@@ -463,7 +568,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_ld_b_n8() {
+    fn test_cpu_decode_ld_b_n8() {
         let op_code: u8 = 0x06;
 
         let mut memory = Memory::new();
@@ -481,5 +586,110 @@ mod tests {
             },
             instruction.operation
         );
+    }
+
+    #[test]
+    fn test_cpu_decode_rlca() {
+        let op_code: u8 = 0x07;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::RLCA, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_a16_sp() {
+        let op_code: u8 = 0x08;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x0001, 1);
+            memory.write_byte(0x0002, 0);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(20, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDA16 {
+                    address: 1,
+                    target: Target::SP
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x0001, 0);
+            memory.write_byte(0x0002, 1);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(20, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDA16 {
+                    address: 256,
+                    target: Target::SP,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x0001, 1);
+            memory.write_byte(0x0002, 1);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(20, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDA16 {
+                    address: 257,
+                    target: Target::SP,
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
+    fn test_cpu_decode_addhl_bc() {
+        let op_code: u8 = 0x09;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ADDHL { target: Target::BC },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefix() {
+        let op_code: u8 = 0xCB;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::PREFIX, instruction.operation);
     }
 }
