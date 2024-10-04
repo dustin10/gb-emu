@@ -229,14 +229,16 @@ impl Display for Operation {
     }
 }
 
-/// An instruction that is ready to be executed by the [`Cpu`].
+/// An instruction that is ready to be executed by the [`Cpu`]. It contains not only the operation
+/// that should be executed by the cpu but also how wide in bytes the instruction is as well as the
+/// number of clock ticks it takes to execute.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Instruction {
     /// Number of bytes that make up the instruction.
     num_bytes: u16,
     /// Number of system clock ticks it takes to execute the instruction.
     clock_ticks: u64,
-    /// [`Operation`] which should be executed.
+    /// [`Operation`] which should be executed by the cpu.
     operation: Operation,
 }
 
