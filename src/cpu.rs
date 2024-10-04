@@ -1,6 +1,6 @@
 use crate::mem::Memory;
 
-/// Represents the registers on the cpu.
+/// Represents the registers on the cpu. Allows for easy manipulation of combined registers.
 #[derive(Clone, Copy, Debug, Default)]
 struct Registers {
     a: u8,
@@ -15,7 +15,7 @@ struct Registers {
 
 impl Registers {
     /// Returns the combined value of the a and f registers.
-    fn get_af(&self) -> u16 {
+    fn af(&self) -> u16 {
         let f: u8 = self.f.into();
 
         (self.a as u16) << 8 | f as u16
@@ -26,7 +26,7 @@ impl Registers {
         self.f = ((value & 0xFF) as u8).into();
     }
     /// Returns the combined value of the b and c registers.
-    fn get_bc(&self) -> u16 {
+    fn bc(&self) -> u16 {
         (self.b as u16) << 8 | self.c as u16
     }
     /// Sets the values of the b and c registers by treating them as one 16 byte value.
@@ -35,7 +35,7 @@ impl Registers {
         self.c = (value & 0xFF) as u8;
     }
     /// Returns the combined value of the d and e registers.
-    fn get_de(&self) -> u16 {
+    fn de(&self) -> u16 {
         (self.d as u16) << 8 | self.e as u16
     }
     /// Sets the values of the d and e registers by treating them as one 16 byte value.
@@ -44,7 +44,7 @@ impl Registers {
         self.e = (value & 0xFF) as u8;
     }
     /// Returns the combined value of the h and l registers.
-    fn get_hl(&self) -> u16 {
+    fn hl(&self) -> u16 {
         (self.h as u16) << 8 | self.l as u16
     }
     /// Sets the values of the h and l registers by treating them as one 16 byte value.
@@ -54,69 +54,101 @@ impl Registers {
     }
 }
 
-/// Eases the special handling required for the `f` register.
+/// Bit position of the carry flag in the [`u8`] representation of [`Flags`].
+const FLAGS_CARRY_BIT_POSITION: u8 = 4;
+
+/// Bit position of the half carry flag in the [`u8`] representation of [`Flags`].
+const FLAGS_HALF_CARRY_BIT_POSITION: u8 = 5;
+
+/// Bit position of the subtract flag in the [`u8`] representation of [`Flags`].
+const FLAGS_SUBTRACT_BIT_POSITION: u8 = 6;
+
+/// Bit position of the zero flag in the [`u8`] representation of [`Flags`].
+const FLAGS_ZERO_BIT_POSITION: u8 = 7;
+
+/// Eases the special handling required for the `f` register which uses the top 4 bits for the
+/// following flags.
+///
+/// * Carry
+/// * Half Carry
+/// * Subtract
+/// * Zero
 #[derive(Clone, Copy, Debug, Default)]
-struct Flags {
-    zero: bool,
-    subtract: bool,
-    half_carry: bool,
-    carry: bool,
-}
+struct Flags(u8);
 
-/// Byte position of the carry flag in the [`u8`] representation of a [`Flags`].
-const CARRY_FLAG_BYTE_POSITION: u8 = 4;
-
-/// Byte position of the half carry flag in the [`u8`] representation of a [`Flags`].
-const HALF_CARRY_FLAG_BYTE_POSITION: u8 = 5;
-
-/// Byte position of the subtract flag in the [`u8`] representation of a [`Flags`].
-const SUBTRACT_FLAG_BYTE_POSITION: u8 = 6;
-
-/// Byte position of the zero flag in the [`u8`] representation of a [`Flags`].
-const ZERO_FLAG_BYTE_POSITION: u8 = 7;
-
-impl From<Flags> for u8 {
-    /// Transforms a [`Flags`] value into a [`u8`].
-    fn from(flag: Flags) -> Self {
-        (if flag.zero { 1 } else { 0 }) << ZERO_FLAG_BYTE_POSITION
-            | (if flag.subtract { 1 } else { 0 }) << SUBTRACT_FLAG_BYTE_POSITION
-            | (if flag.half_carry { 1 } else { 0 }) << HALF_CARRY_FLAG_BYTE_POSITION
-            | (if flag.carry { 1 } else { 0 }) << CARRY_FLAG_BYTE_POSITION
+impl Flags {
+    /// Creates a new default [`Flags`].
+    fn new() -> Self {
+        Self::default()
     }
-}
-
-impl From<u8> for Flags {
-    /// Transforms a [`u8`] value into a [`Flags`].
-    fn from(byte: u8) -> Self {
-        let zero = ((byte >> ZERO_FLAG_BYTE_POSITION) & 1) != 0;
-        let subtract = ((byte >> SUBTRACT_FLAG_BYTE_POSITION) & 1) != 0;
-        let half_carry = ((byte >> HALF_CARRY_FLAG_BYTE_POSITION) & 1) != 0;
-        let carry = ((byte >> CARRY_FLAG_BYTE_POSITION) & 1) != 0;
-
-        Self {
-            zero,
-            subtract,
-            half_carry,
-            carry,
+    /// Retrieves the current status of the carry flag.
+    fn c(&self) -> bool {
+        (self.0 >> FLAGS_CARRY_BIT_POSITION) & 1 != 0
+    }
+    /// Sets the status of the carry flag.
+    fn set_c(&mut self, on: bool) {
+        if on {
+            self.0 |= 1 << FLAGS_CARRY_BIT_POSITION;
+        } else {
+            self.0 &= 0 << 1;
+        }
+    }
+    /// Retrieves the current status of the half carry flag.
+    fn h(&self) -> bool {
+        (self.0 >> FLAGS_HALF_CARRY_BIT_POSITION) & 1 != 0
+    }
+    /// Sets the status of the half carry flag.
+    fn set_h(&mut self, on: bool) {
+        if on {
+            self.0 |= 1 << FLAGS_HALF_CARRY_BIT_POSITION;
+        } else {
+            self.0 &= 0 << 1;
+        }
+    }
+    /// Retrieves the current status of the subtract flag.
+    fn n(&self) -> bool {
+        (self.0 >> FLAGS_SUBTRACT_BIT_POSITION) & 1 != 0
+    }
+    /// Sets the status of the substract flag.
+    fn set_n(&mut self, on: bool) {
+        if on {
+            self.0 |= 1 << FLAGS_SUBTRACT_BIT_POSITION;
+        } else {
+            self.0 &= 0 << 1;
+        }
+    }
+    /// Retrieves the current status of the zero flag.
+    fn z(&self) -> bool {
+        (self.0 >> FLAGS_ZERO_BIT_POSITION) & 1 != 0
+    }
+    /// Sets the status of the zero flag.
+    fn set_z(&mut self, on: bool) {
+        if on {
+            self.0 |= 1 << FLAGS_ZERO_BIT_POSITION;
+        } else {
+            self.0 &= 0 << 1;
         }
     }
 }
 
-/// Enumerates the target registers for arithmetic operations executed by the [`Cpu`].
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ArithmeticTarget {
-    A,
-    B,
-    C,
-    D,
-    E,
-    H,
-    L,
+impl From<u8> for Flags {
+    /// Converts the given [`u8`] into a [`Flags`].
+    fn from(value: u8) -> Self {
+        Self(value)
+    }
 }
 
-/// Enumerates the target registers for increment and decrement operations executed by the [`Cpu`].
+impl From<Flags> for u8 {
+    /// Converts the given [`Flags`] into a [`u8`].
+    fn from(value: Flags) -> Self {
+        value.0
+    }
+}
+
+/// Enumeration of the target registers available to the cpu instructions.
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IncDecTarget {
+enum Target {
     A,
     B,
     C,
@@ -130,546 +162,324 @@ pub enum IncDecTarget {
     HL,
 }
 
-/// Enumeration of the instructions the [`Cpu`] is capable of executing.
+/// Enumeration of the operations the [`Cpu`] is capable of executing.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Instruction {
-    /// Add with carry - just like ADD except that the value of the carry flag is also added to the number
-    ADC(ArithmeticTarget),
-    /// Adds specific register's contents to the A register's contents.
-    ADD(ArithmeticTarget),
-    /// Add to HL - just like ADD except that the target is added to the HL register
-    ADDHL(ArithmeticTarget),
-    /// Logical AND - do a bitwise and on the value in a specific register and the value in the A register
-    AND(ArithmeticTarget),
-    /// Bit test - test to see if a specific bit of a specific register is set
-    BIT(ArithmeticTarget, u8),
-    /// Complement carry flag - toggle the value of the carry flag
-    CCF,
-    /// Compare - just like SUB except the result of the subtraction is not stored back into A
-    CP(ArithmeticTarget),
-    /// Complement - toggle every bit of the A register
-    CPL,
-    /// Decrement - decrement the value in a specific register by 1
-    DEC(IncDecTarget),
-    /// Increment - increment the value in a specific register by 1
-    INC(IncDecTarget),
-    /// Logical OR - do a bitwise or on the value in a specific register and the value in the A register
-    OR(ArithmeticTarget),
-    /// Bit reset - set a specific bit of a specific register to 0
-    RESET(ArithmeticTarget, u8),
-    /// Rotate left - bit rotate a specific register left by 1 through the carry flag
-    RL(ArithmeticTarget),
-    /// Rotate left A register - bit rotate A register left through the carry flag
-    RLA,
-    /// Rorate left - bit rotate a specific register left by 1 not through the carry flag
-    RLC(ArithmeticTarget),
-    /// Rotate right - bit rotate a specific register right by 1 through the carry flag
-    RR(ArithmeticTarget),
-    /// Rotate right A register - bit rotate A register right through the carry flag
-    RRA,
-    /// Rorate right - bit rotate a specific register right by 1 not through the carry flag
-    RRC(ArithmeticTarget),
-    /// Rotate right A register - bit rotate A register right not through the carry flag
-    RRCA,
-    /// Rotate left A register - bit rotate A register left not through the carry flag
-    RRLA,
-    /// Subtract with carry - just like ADD except that the value of the carry flag is also subtracted from the number
-    SBC(ArithmeticTarget),
-    /// Set carry flag - set the carry flag to true
-    SCF,
-    /// Bit set - set a specific bit of a specific register to 1
-    SET(ArithmeticTarget, u8),
-    /// Shift left arithmetic - arithmetic shift a specific register left by 1
-    SLA(ArithmeticTarget),
-    /// Shift right arithmetic - arithmetic shift a specific register right by 1
-    SRA(ArithmeticTarget),
-    /// Shift right logical - bit shift a specific register right by 1
-    SRL(ArithmeticTarget),
-    /// Subtracts the value stored in a specific register with the value in the A register
-    SUB(ArithmeticTarget),
-    /// Swap nibbles - switch upper and lower nibble of a specific register
-    SWAP(ArithmeticTarget),
-    /// Logical XOR - do a bitwise xor on the value in a specific register and the value in the A register
-    XOR(ArithmeticTarget),
+enum Operation {
+    DEC { target: Target },
+    INC { target: Target },
+    LDN8 { target: Target, value: u8 },
+    LDN16 { target: Target, value: u16 },
+    LDA { target: Target },
+    NOP,
+}
+
+/// An instruction that is ready to be executed by the [`Cpu`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Instruction {
+    /// Number of bytes that make up the instruction.
+    num_bytes: u16,
+    /// Number of system clock ticks it takes to execute the instruction.
+    clock_ticks: u64,
+    /// [`Operation`] which should be executed.
+    operation: Operation,
 }
 
 impl Instruction {
-    fn from_byte(byte: u8) -> Option<Instruction> {
-        match byte {
-            0x03 => Some(Instruction::INC(IncDecTarget::BC)),
-            0x13 => Some(Instruction::INC(IncDecTarget::DE)),
-            // TODO: add mapping for rest of instructions
-            _ => None,
+    /// Creates a new [`Instruction`] from the given values.
+    fn new(num_bytes: u16, clock_ticks: u64, operation: Operation) -> Self {
+        Self {
+            num_bytes,
+            clock_ticks,
+            operation,
         }
     }
 }
 
+/// Represents the central processing unit of the Game Boy system. It is responsible for reading,
+/// decoding and executing instructions which drive the game.
 #[derive(Debug, Default)]
 pub struct Cpu {
+    /// Registers read and written by the instructions.
     registers: Registers,
-    program_counter: u16,
-    _stack_pointer: u16,
+    /// Program counter.
+    pc: u16,
+    /// Stack pointer.
+    sp: u16,
 }
 
 impl Cpu {
+    /// Creates a new default [`Cpu`].
+    pub fn new() -> Self {
+        Self::default()
+    }
     /// Reads and executes the next instruction based on the current program counter.
     pub fn step(&mut self, memory: &Memory) {
-        let instruction_byte = memory.read_byte(self.program_counter);
+        let op_code = memory.read_byte(self.pc);
 
-        let next_pc = if let Some(instruction) = Instruction::from_byte(instruction_byte) {
-            self.execute(instruction)
+        if let Some(instruction) = self.decode(op_code, memory) {
+            self.pc = self.execute(&instruction);
         } else {
-            panic!("unkown instruction encountered: 0x{:x}", instruction_byte);
+            tracing::warn!("encountered unkown instruction: 0x{:x}", op_code);
         };
+    }
+    /// Transforms the given op code into an [`Instruction`] which can be executed by the [`Cpu`].
+    fn decode(&self, op_code: u8, memory: &Memory) -> Option<Instruction> {
+        match op_code {
+            0x00 => Some(Instruction::new(1, 4, Operation::NOP)),
+            0x01 => {
+                let low = memory.read_byte(self.pc + 1);
+                let high = memory.read_byte(self.pc + 2);
+                let value = (high as u16) << 8 | low as u16;
 
-        self.program_counter = next_pc;
+                Some(Instruction::new(
+                    3,
+                    12,
+                    Operation::LDN16 {
+                        target: Target::BC,
+                        value,
+                    },
+                ))
+            }
+            0x02 => Some(Instruction::new(
+                1,
+                8,
+                Operation::LDA { target: Target::BC },
+            )),
+            0x03 => Some(Instruction::new(
+                1,
+                8,
+                Operation::INC { target: Target::BC },
+            )),
+            0x04 => Some(Instruction::new(1, 4, Operation::INC { target: Target::B })),
+            0x05 => Some(Instruction::new(1, 4, Operation::DEC { target: Target::B })),
+            0x06 => {
+                let value = memory.read_byte(self.pc + 1);
+
+                Some(Instruction::new(
+                    2,
+                    8,
+                    Operation::LDN8 {
+                        target: Target::B,
+                        value,
+                    },
+                ))
+            }
+            _ => None,
+        }
     }
     /// Executes the specified [`Instruction`].
-    pub fn execute(&mut self, instruction: Instruction) -> u16 {
-        match instruction {
-            Instruction::ADC(target) => self.add_carry_a(self.target_value(target)),
-            Instruction::ADD(target) => self.add_a(self.target_value(target)),
-            Instruction::ADDHL(target) => self.addhl(self.target_value(target)),
-            Instruction::AND(target) => self.and_a(self.target_value(target)),
-            Instruction::BIT(target, bit) => self.bit(self.target_value(target), bit),
-            Instruction::CCF => self.ccf(),
-            Instruction::CP(target) => self.cp(self.target_value(target)),
-            Instruction::CPL => self.cpl(),
-            Instruction::DEC(target) => self.dec(target),
-            Instruction::INC(target) => self.inc(target),
-            Instruction::OR(target) => self.or(self.target_value(target)),
-            Instruction::RESET(target, bit) => self.reset(target, bit),
-            Instruction::RL(target) => self.rl(target),
-            Instruction::RLA => self.rl(ArithmeticTarget::A),
-            Instruction::RLC(target) => self.rlc(target),
-            Instruction::RR(target) => self.rr(target),
-            Instruction::RRA => self.rr(ArithmeticTarget::A),
-            Instruction::RRC(target) => self.rrc(target),
-            Instruction::RRCA => self.rrc(ArithmeticTarget::A),
-            Instruction::RRLA => self.rrla(),
-            Instruction::SBC(target) => self.sbc(self.target_value(target)),
-            Instruction::SCF => self.scf(),
-            Instruction::SET(target, bit) => self.set(target, bit),
-            Instruction::SLA(target) => self.sla(target),
-            Instruction::SRA(target) => self.sra(target),
-            Instruction::SRL(target) => self.srl(target),
-            Instruction::SUB(target) => self.sub(self.target_value(target)),
-            Instruction::SWAP(target) => self.swap(target),
-            Instruction::XOR(target) => self.xor(self.target_value(target)),
+    fn execute(&mut self, instruction: &Instruction) -> u16 {
+        // TODO: match on instruction.operation and execute
+
+        self.pc.wrapping_add(instruction.num_bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_flags_c() {
+        let mut flags = Flags::new();
+        assert!(!flags.c());
+
+        flags.set_c(true);
+        assert!(flags.c());
+        assert_eq!(flags.0, 1 << FLAGS_CARRY_BIT_POSITION);
+
+        flags.set_c(false);
+        assert!(!flags.c());
+    }
+
+    #[test]
+    fn test_flags_h() {
+        let mut flags = Flags::new();
+        assert!(!flags.h());
+
+        flags.set_h(true);
+        assert!(flags.h());
+        assert_eq!(flags.0, 1 << FLAGS_HALF_CARRY_BIT_POSITION);
+
+        flags.set_h(false);
+        assert!(!flags.h());
+    }
+
+    #[test]
+    fn test_flags_n() {
+        let mut flags = Flags::new();
+        assert!(!flags.n());
+
+        flags.set_n(true);
+        assert!(flags.n());
+        assert_eq!(flags.0, 1 << FLAGS_SUBTRACT_BIT_POSITION);
+
+        flags.set_n(false);
+        assert!(!flags.n());
+    }
+
+    #[test]
+    fn test_flags_z() {
+        let mut flags = Flags::new();
+        assert!(!flags.z());
+
+        flags.set_z(true);
+        assert!(flags.z());
+        assert_eq!(flags.0, 1 << FLAGS_ZERO_BIT_POSITION);
+
+        flags.set_z(false);
+        assert!(!flags.z());
+    }
+
+    #[test]
+    fn test_decode_nop() {
+        let op_code: u8 = 0x00;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::NOP, instruction.operation);
+    }
+
+    #[test]
+    fn test_decode_ld_bc_n16() {
+        let op_code: u8 = 0x01;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x0001, 1);
+            memory.write_byte(0x0002, 0);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDN16 {
+                    target: Target::BC,
+                    value: 1
+                },
+                instruction.operation
+            );
         }
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x0001, 0);
+            memory.write_byte(0x0002, 1);
 
-        self.program_counter.wrapping_add(1)
-    }
-    fn target_value(&self, target: ArithmeticTarget) -> u8 {
-        match target {
-            ArithmeticTarget::A => self.registers.a,
-            ArithmeticTarget::B => self.registers.b,
-            ArithmeticTarget::C => self.registers.c,
-            ArithmeticTarget::D => self.registers.d,
-            ArithmeticTarget::E => self.registers.e,
-            ArithmeticTarget::H => self.registers.h,
-            ArithmeticTarget::L => self.registers.l,
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDN16 {
+                    target: Target::BC,
+                    value: 256,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x0001, 1);
+            memory.write_byte(0x0002, 1);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDN16 {
+                    target: Target::BC,
+                    value: 257,
+                },
+                instruction.operation
+            );
         }
     }
-    fn add(&mut self, value: u8) -> u8 {
-        let (new_value, overflowed) = self.registers.a.overflowing_add(value);
 
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.carry = overflowed;
-        self.registers.f.half_carry = (self.registers.a & 0xF) + (value & 0xF) > 0xF;
+    #[test]
+    fn test_decode_ld_bc_a() {
+        let op_code: u8 = 0x02;
 
-        new_value
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::LDA { target: Target::BC }, instruction.operation);
     }
-    fn add_a(&mut self, value: u8) {
-        self.registers.a = self.add(value);
+
+    #[test]
+    fn test_decode_inc_bc() {
+        let op_code: u8 = 0x03;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::INC { target: Target::BC }, instruction.operation);
     }
-    fn add_carry(&mut self, value: u8) -> u8 {
-        let carry = if self.registers.f.carry { 1 } else { 0 };
 
-        let (new_value, overflowed) = self.registers.a.overflowing_add(value + carry);
+    #[test]
+    fn test_decode_inc_b() {
+        let op_code: u8 = 0x04;
 
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.carry = overflowed;
-        self.registers.f.half_carry = (self.registers.a & 0xF) + (value & 0xF) > 0xF;
+        let memory = Memory::new();
 
-        new_value
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::INC { target: Target::B }, instruction.operation);
     }
-    fn add_carry_a(&mut self, value: u8) {
-        self.registers.a = self.add_carry(value);
+
+    #[test]
+    fn test_decode_dec_b() {
+        let op_code: u8 = 0x05;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::DEC { target: Target::B }, instruction.operation);
     }
-    fn addhl(&mut self, value: u8) {
-        let (new_value, overflowed) = self.registers.get_hl().overflowing_add(value as u16);
 
-        self.registers.set_hl(new_value);
+    #[test]
+    fn test_decode_ld_b_n8() {
+        let op_code: u8 = 0x06;
 
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.carry = overflowed;
-        self.registers.f.half_carry = (self.registers.a & 0xF) + (value & 0xF) > 0xF;
-    }
-    fn and_a(&mut self, value: u8) {
-        let new_value = self.registers.a & value;
+        let mut memory = Memory::new();
+        memory.write_byte(0x0001, 3);
 
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.carry = false;
-        self.registers.f.half_carry = true;
-    }
-    fn bit(&mut self, value: u8, bit: u8) {
-        let zero = (value & (1 << bit)) != 0;
+        let cpu = Cpu::new();
 
-        self.registers.f.zero = zero;
-        self.registers.f.subtract = false;
-        self.registers.f.carry = false;
-        self.registers.f.half_carry = true;
-    }
-    fn ccf(&mut self) {
-        self.registers.f.subtract = false;
-        self.registers.f.carry = !self.registers.f.carry;
-        self.registers.f.half_carry = false;
-    }
-    fn cp(&mut self, value: u8) {
-        let (new_value, overflowed) = self.registers.a.overflowing_sub(value);
-
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = true;
-        self.registers.f.carry = overflowed;
-        self.registers.f.half_carry = (self.registers.a & 0xF) + (value & 0xF) > 0xF;
-    }
-    fn cpl(&mut self) {
-        self.registers.a = !self.registers.a;
-
-        self.registers.f.subtract = true;
-        self.registers.f.half_carry = true;
-    }
-    fn dec(&mut self, target: IncDecTarget) {
-        let value = match target {
-            IncDecTarget::A => {
-                self.registers.a -= 1;
-                self.registers.a
-            }
-            IncDecTarget::B => {
-                self.registers.b -= 1;
-                self.registers.b
-            }
-            IncDecTarget::C => {
-                self.registers.c -= 1;
-                self.registers.c
-            }
-            IncDecTarget::D => {
-                self.registers.d -= 1;
-                self.registers.d
-            }
-            IncDecTarget::E => {
-                self.registers.e -= 1;
-                self.registers.e
-            }
-            IncDecTarget::H => {
-                self.registers.h -= 1;
-                self.registers.h
-            }
-            IncDecTarget::L => {
-                self.registers.l -= 1;
-                self.registers.l
-            }
-            _ => todo!(),
-        };
-
-        self.registers.f.zero = value == 0;
-        self.registers.f.subtract = true;
-        self.registers.f.half_carry = (value & 0x0F) == 0x0F;
-    }
-    fn inc(&mut self, target: IncDecTarget) {
-        let value = match target {
-            IncDecTarget::A => {
-                self.registers.a += 1;
-                self.registers.a
-            }
-            IncDecTarget::B => {
-                self.registers.b += 1;
-                self.registers.b
-            }
-            IncDecTarget::C => {
-                self.registers.c += 1;
-                self.registers.c
-            }
-            IncDecTarget::D => {
-                self.registers.d += 1;
-                self.registers.d
-            }
-            IncDecTarget::E => {
-                self.registers.e += 1;
-                self.registers.e
-            }
-            IncDecTarget::H => {
-                self.registers.h += 1;
-                self.registers.h
-            }
-            IncDecTarget::L => {
-                self.registers.l += 1;
-                self.registers.l
-            }
-            _ => todo!(),
-        };
-
-        self.registers.f.zero = value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.half_carry = (value & 0x0F) == 0x00;
-    }
-    fn or(&mut self, value: u8) {
-        self.registers.a |= value;
-
-        self.registers.f.zero = self.registers.a == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.carry = false;
-        self.registers.f.half_carry = false;
-    }
-    fn reset(&mut self, target: ArithmeticTarget, bit: u8) {
-        match target {
-            ArithmeticTarget::A => self.registers.a &= !(1 << bit),
-            ArithmeticTarget::B => self.registers.b &= !(1 << bit),
-            ArithmeticTarget::C => self.registers.c &= !(1 << bit),
-            ArithmeticTarget::D => self.registers.d &= !(1 << bit),
-            ArithmeticTarget::E => self.registers.e &= !(1 << bit),
-            ArithmeticTarget::H => self.registers.h &= !(1 << bit),
-            ArithmeticTarget::L => self.registers.l &= !(1 << bit),
-        };
-    }
-    fn rl(&mut self, target: ArithmeticTarget) {
-        let value = match target {
-            ArithmeticTarget::A => &mut self.registers.a,
-            ArithmeticTarget::B => &mut self.registers.b,
-            ArithmeticTarget::C => &mut self.registers.c,
-            ArithmeticTarget::D => &mut self.registers.d,
-            ArithmeticTarget::E => &mut self.registers.e,
-            ArithmeticTarget::H => &mut self.registers.h,
-            ArithmeticTarget::L => &mut self.registers.l,
-        };
-
-        let carry_value = if self.registers.f.carry { 1 } else { 0 };
-        let will_carry = (*value & (1 << 7)) != 0;
-
-        let mut new_value = *value << 1;
-        new_value |= carry_value;
-
-        *value = new_value;
-
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.carry = will_carry;
-        self.registers.f.half_carry = false;
-    }
-    fn rlc(&mut self, target: ArithmeticTarget) {
-        let value = match target {
-            ArithmeticTarget::A => &mut self.registers.a,
-            ArithmeticTarget::B => &mut self.registers.b,
-            ArithmeticTarget::C => &mut self.registers.c,
-            ArithmeticTarget::D => &mut self.registers.d,
-            ArithmeticTarget::E => &mut self.registers.e,
-            ArithmeticTarget::H => &mut self.registers.h,
-            ArithmeticTarget::L => &mut self.registers.l,
-        };
-
-        let will_carry = (*value & (1 << 7)) != 0;
-        let truncated_bit = *value & (1 << 7);
-        let new_value = (*value << 1) | truncated_bit;
-
-        *value = new_value;
-
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.carry = will_carry;
-        self.registers.f.half_carry = false;
-    }
-    fn rr(&mut self, target: ArithmeticTarget) {
-        let value = match target {
-            ArithmeticTarget::A => &mut self.registers.a,
-            ArithmeticTarget::B => &mut self.registers.b,
-            ArithmeticTarget::C => &mut self.registers.c,
-            ArithmeticTarget::D => &mut self.registers.d,
-            ArithmeticTarget::E => &mut self.registers.e,
-            ArithmeticTarget::H => &mut self.registers.h,
-            ArithmeticTarget::L => &mut self.registers.l,
-        };
-
-        let carry_value = if self.registers.f.carry { 1 } else { 0 };
-        let will_carry = (*value & (1 << 0)) != 0;
-
-        let mut new_value = *value >> 1;
-        new_value |= carry_value << 7;
-
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.carry = will_carry;
-        self.registers.f.half_carry = false;
-    }
-    fn rrc(&mut self, target: ArithmeticTarget) {
-        let value = match target {
-            ArithmeticTarget::A => &mut self.registers.a,
-            ArithmeticTarget::B => &mut self.registers.b,
-            ArithmeticTarget::C => &mut self.registers.c,
-            ArithmeticTarget::D => &mut self.registers.d,
-            ArithmeticTarget::E => &mut self.registers.e,
-            ArithmeticTarget::H => &mut self.registers.h,
-            ArithmeticTarget::L => &mut self.registers.l,
-        };
-
-        let will_carry = (*value & (1 << 0)) != 0;
-        let truncated_bit = *value & (1 << 0);
-
-        let new_value = (*value >> 1) | (truncated_bit << 7);
-
-        *value = new_value;
-
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.carry = will_carry;
-        self.registers.f.half_carry = false;
-    }
-    fn rrla(&mut self) {
-        let value = self.registers.a;
-
-        let will_carry = (value & (1 << 7)) != 0;
-        let truncated_bit = value & (1 << 7);
-
-        let new_value = (value >> 1) | (truncated_bit << 7);
-
-        self.registers.a = new_value;
-
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.carry = will_carry;
-        self.registers.f.half_carry = false;
-    }
-    fn sbc(&mut self, _value: u8) {
-        //u8 carry = f.flag_carry_value();
-        //u8 reg = a.value();
-        //
-        //int result_full = reg - value - carry;
-        //u8 result = static_cast<u8>(result_full);
-        //
-        //set_flag_zero(result == 0);
-        //set_flag_subtract(true);
-        //set_flag_carry(result_full < 0);
-        //set_flag_half_carry(((reg & 0xf) - (value & 0xf) - carry) < 0);
-        //
-        //a.set(result);
-    }
-    fn scf(&mut self) {
-        self.registers.f.carry = true;
-    }
-    fn set(&mut self, target: ArithmeticTarget, bit: u8) {
-        let value = match target {
-            ArithmeticTarget::A => &mut self.registers.a,
-            ArithmeticTarget::B => &mut self.registers.b,
-            ArithmeticTarget::C => &mut self.registers.c,
-            ArithmeticTarget::D => &mut self.registers.d,
-            ArithmeticTarget::E => &mut self.registers.e,
-            ArithmeticTarget::H => &mut self.registers.h,
-            ArithmeticTarget::L => &mut self.registers.l,
-        };
-
-        *value |= 1 << bit;
-    }
-    fn sla(&mut self, target: ArithmeticTarget) {
-        let value = match target {
-            ArithmeticTarget::A => &mut self.registers.a,
-            ArithmeticTarget::B => &mut self.registers.b,
-            ArithmeticTarget::C => &mut self.registers.c,
-            ArithmeticTarget::D => &mut self.registers.d,
-            ArithmeticTarget::E => &mut self.registers.e,
-            ArithmeticTarget::H => &mut self.registers.h,
-            ArithmeticTarget::L => &mut self.registers.l,
-        };
-
-        let will_carry = (*value & (1 << 7)) != 0;
-        let new_value = *value << 1;
-
-        *value = new_value;
-
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.carry = will_carry;
-        self.registers.f.half_carry = false;
-    }
-    fn sra(&mut self, target: ArithmeticTarget) {
-        //u8 carry_bit = check_bit(value, 0);
-        //u8 top_bit = check_bit(value, 7);
-        //
-        //u8 result = static_cast<u8>(value >> 1);
-        //result = bitwise::set_bit_to(result, 7, top_bit);
-        //
-        //set_flag_zero(result == 0);
-        //set_flag_carry(carry_bit);
-        //set_flag_half_carry(false);
-        //set_flag_subtract(false);
-
-        let _value = match target {
-            ArithmeticTarget::A => &mut self.registers.a,
-            ArithmeticTarget::B => &mut self.registers.b,
-            ArithmeticTarget::C => &mut self.registers.c,
-            ArithmeticTarget::D => &mut self.registers.d,
-            ArithmeticTarget::E => &mut self.registers.e,
-            ArithmeticTarget::H => &mut self.registers.h,
-            ArithmeticTarget::L => &mut self.registers.l,
-        };
-    }
-    fn srl(&mut self, target: ArithmeticTarget) {
-        let value = match target {
-            ArithmeticTarget::A => &mut self.registers.a,
-            ArithmeticTarget::B => &mut self.registers.b,
-            ArithmeticTarget::C => &mut self.registers.c,
-            ArithmeticTarget::D => &mut self.registers.d,
-            ArithmeticTarget::E => &mut self.registers.e,
-            ArithmeticTarget::H => &mut self.registers.h,
-            ArithmeticTarget::L => &mut self.registers.l,
-        };
-
-        let will_carry = (*value & (1 << 0)) != 0;
-        let new_value = *value >> 1;
-
-        *value = new_value;
-
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.half_carry = false;
-        self.registers.f.carry = will_carry;
-    }
-    fn sub(&mut self, value: u8) {
-        let curr_value = self.registers.a;
-        let new_value = curr_value.wrapping_sub(value);
-
-        self.registers.a = new_value;
-
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = true;
-        self.registers.f.half_carry = (curr_value as i16 & 0xF) - (value as i16 & 0xF) < 0;
-        self.registers.f.carry = curr_value < value;
-    }
-    fn swap(&mut self, _target: ArithmeticTarget) {
-        //using bitwise::compose_nibbles;
-        //
-        //u8 lower_nibble = value & 0x0F;
-        //u8 upper_nibble = (value & 0xF0) >> 4;
-        //
-        //u8 result = compose_nibbles(lower_nibble, upper_nibble);
-        //
-        //set_flag_zero(result == 0);
-        //set_flag_subtract(false);
-        //set_flag_half_carry(false);
-        //set_flag_carry(false);
-    }
-    fn xor(&mut self, value: u8) {
-        let new_value = self.registers.a ^ value;
-
-        self.registers.a = new_value;
-
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.registers.f.half_carry = false;
-        self.registers.f.carry = false;
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDN8 {
+                target: Target::B,
+                value: 3
+            },
+            instruction.operation
+        );
     }
 }
