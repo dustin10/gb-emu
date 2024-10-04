@@ -692,4 +692,17 @@ mod tests {
         assert_eq!(4, instruction.clock_ticks);
         assert_eq!(Operation::PREFIX, instruction.operation);
     }
+
+    #[test]
+    fn test_execute_prefix() {
+        let instruction = Instruction::new(1, 4, Operation::PREFIX);
+
+        let memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+
+        let new_pc = cpu.execute(&instruction);
+        assert_eq!(1, new_pc);
+        assert!(cpu.prefixed);
+    }
 }
