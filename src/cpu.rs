@@ -1,6 +1,6 @@
-use std::fmt::Display;
-
 use crate::mem::Memory;
+
+use std::fmt::Display;
 
 /// Represents the registers on the cpu. Allows for easy manipulation of combined registers.
 #[derive(Clone, Copy, Debug, Default)]
