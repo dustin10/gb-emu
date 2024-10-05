@@ -12,6 +12,7 @@ rust-version = "1.80"
 
 [dependencies]
 anyhow = "1.0.89"
+bounded-vec-deque = "0.1.1"
 clap = { version = "4.5.17", features = ["derive"] }
 tracing = { version = "0.1.40", features = ["log"] }
 tracing-subscriber = { version = "0.3.18", features = ["json", "env-filter"] }

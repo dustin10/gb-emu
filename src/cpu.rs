@@ -1,18 +1,32 @@
+use bounded_vec_deque::BoundedVecDeque;
+
 use crate::mem::Memory;
 
-use std::fmt::Display;
+use std::{collections::VecDeque, fmt::Display};
 
-/// Represents the registers on the cpu. Allows for easy manipulation of combined registers.
+/// Represents the registers on the cpu. Allows for easy manipulation of combined 16-bit registers as well.
 #[derive(Clone, Copy, Debug, Default)]
 struct Registers {
+    /// A register.
     a: u8,
+    /// B register.
     b: u8,
+    /// C register.
     c: u8,
+    /// D register.
     d: u8,
+    /// E register.
     e: u8,
+    /// Special flags register.
     f: Flags,
+    /// H register.
     h: u8,
+    /// L register.
     l: u8,
+    /// Program counter.
+    pc: u16,
+    /// Srack pointer.
+    sp: u16,
 }
 
 impl Registers {
@@ -71,7 +85,7 @@ const FLAGS_ZERO_BIT_POSITION: u8 = 7;
 /// Eases the special handling required for the `F` register which uses the top 4 bits for the
 /// following flags.
 ///
-/// 76543210
+/// 76543210 <- Bit position
 /// --------
 /// 00000000
 /// ||||
@@ -151,28 +165,40 @@ impl From<Flags> for u8 {
     }
 }
 
-/// Enumeration of the target registers available to the cpu instructions.
+/// Enumeration of the target registers available to be manipulated by the cpu instructions.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Target {
+    /// A register.
     A,
+    /// B register.
     B,
+    /// C register.
     C,
+    /// D register.
     D,
+    /// E register.
     E,
+    /// H register.
     H,
+    /// L register.
     L,
+    /// Combined AF 16-bit register.
     AF,
+    /// Combined BC 16-bit register.
     BC,
+    /// Combined DE 16-bit register.
     DE,
+    /// Combined HL 16-bit register.
     HL,
+    /// Stack pointer.
     SP,
 }
 
 impl Display for Target {
     /// Writes a string representation of the [`Target`] to the formatter.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!("{:?}", self))
+        f.write_fmt(format_args!("{:?}", self))
     }
 }
 
@@ -198,10 +224,10 @@ enum Operation {
     LDA { target: Target },
     /// No operation.
     NOP,
-    /// Prefix op-code which causes the subsequent byte to represent a different set of
+    /// Prefix op code which causes the subsequent byte to represent a different set of
     /// instructions.
     PREFIX,
-    /// Bit rotate the A register register left by 1 not through the carry flag.
+    /// Bit rotate the A register register left by one, not through the carry flag.
     RLCA,
 }
 
@@ -229,9 +255,9 @@ impl Display for Operation {
     }
 }
 
-/// An instruction that is ready to be executed by the [`Cpu`]. It contains not only the operation
-/// that should be executed by the cpu but also how wide in bytes the instruction is as well as the
-/// number of clock ticks it takes to execute.
+/// An instruction that is ready to be executed by the [`Cpu`]. It contains not only the
+/// [`Operation`] that should be executed by the cpu but also how wide in bytes the instruction
+/// is as well as the number of clock ticks it takes to execute.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Instruction {
     /// Number of bytes that make up the instruction.
@@ -262,18 +288,45 @@ impl Display for Instruction {
     }
 }
 
+/// Enumerates the different instruction sets that can be used when creating an [`Instruction`]
+/// from an op code.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum InstructionSet {
+    /// Default instruction set.
+    Standard,
+    /// Active when the previous instruction executed was `PREFIX` which has op code 0xCB.
+    Prefixed,
+}
+
+impl Default for InstructionSet {
+    /// Returns the default value for [`InstructionSet`]. The default value is
+    /// [`InstructionSet::Standard`].
+    fn default() -> Self {
+        Self::Standard
+    }
+}
+
 /// Represents the central processing unit of the Game Boy system. It is responsible for reading,
 /// decoding and executing instructions which drive the game.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Cpu {
     /// Registers read and written by the instructions.
     registers: Registers,
-    /// Program counter.
-    pc: u16,
-    /// Stack pointer.
-    sp: u16,
-    /// Indicates whether the next instruction read was prefixed with 0xCB or not.
-    prefixed: bool,
+    /// Indicates the instruction set that should be used when decoding an op code.
+    instruction_set: InstructionSet,
+    /// Tracks the history of [`Instruction`]s that were executed by the cpu.
+    history: BoundedVecDeque<Instruction>,
+}
+
+/// Default value for the maximum number of instructions stored in the instruction execution
+/// history of the [`Cpu`].
+const DEFAULT_CPU_MAX_HISTORY: usize = 250;
+
+impl Default for Cpu {
+    /// Creates a default [`Cpu`] with max history size of 250.
+    fn default() -> Self {
+        Self::with_max_history(DEFAULT_CPU_MAX_HISTORY)
+    }
 }
 
 impl Cpu {
@@ -281,30 +334,48 @@ impl Cpu {
     pub fn new() -> Self {
         Self::default()
     }
+    /// Creates a new [`Cpu`] with the given max instruction history length.
+    fn with_max_history(max: usize) -> Self {
+        Self {
+            registers: Registers::default(),
+            instruction_set: InstructionSet::default(),
+            history: BoundedVecDeque::with_capacity(max, max),
+        }
+    }
     /// Reads and executes the next instruction based on the current program counter.
     pub fn step(&mut self, memory: &Memory) {
-        let op_code = memory.read_byte(self.pc);
+        let op_code = memory.read_byte(self.registers.pc);
 
-        let instruction = if self.prefixed {
-            self.decode_prefixed(op_code, memory)
-        } else {
-            self.decode(op_code, memory)
+        let instruction = match self.instruction_set {
+            InstructionSet::Standard => self.decode(op_code, memory),
+            InstructionSet::Prefixed => self.decode_prefixed(op_code),
         };
 
         if let Some(instruction) = instruction {
-            let new_pc = self.execute(&instruction);
-            self.pc = new_pc;
+            let (new_pc, prefix) = self.execute(&instruction);
+
+            self.registers.pc = new_pc;
+
+            self.instruction_set = if prefix {
+                InstructionSet::Prefixed
+            } else {
+                InstructionSet::Standard
+            };
+
+            self.history.push_front(instruction);
         } else {
-            tracing::warn!("encountered unknown instruction: 0x{:x}", op_code);
+            tracing::warn!("unknown instruction: {:#4x}", op_code);
         };
     }
     /// Transforms the given op code into an [`Instruction`] which can be executed by the [`Cpu`].
     fn decode(&self, op_code: u8, memory: &Memory) -> Option<Instruction> {
+        tracing::debug!("decoding op code {:#4x}", op_code);
+
         match op_code {
             0x00 => Some(Instruction::new(1, 4, Operation::NOP)),
             0x01 => {
-                let low = memory.read_byte(self.pc + 1);
-                let high = memory.read_byte(self.pc + 2);
+                let low = memory.read_byte(self.registers.pc + 1);
+                let high = memory.read_byte(self.registers.pc + 2);
                 let value = (high as u16) << 8 | low as u16;
 
                 Some(Instruction::new(
@@ -329,7 +400,7 @@ impl Cpu {
             0x04 => Some(Instruction::new(1, 4, Operation::INC { target: Target::B })),
             0x05 => Some(Instruction::new(1, 4, Operation::DEC { target: Target::B })),
             0x06 => {
-                let value = memory.read_byte(self.pc + 1);
+                let value = memory.read_byte(self.registers.pc + 1);
 
                 Some(Instruction::new(
                     2,
@@ -342,8 +413,8 @@ impl Cpu {
             }
             0x07 => Some(Instruction::new(1, 4, Operation::RLCA)),
             0x08 => {
-                let low = memory.read_byte(self.pc + 1);
-                let high = memory.read_byte(self.pc + 2);
+                let low = memory.read_byte(self.registers.pc + 1);
+                let high = memory.read_byte(self.registers.pc + 2);
                 let address = (high as u16) << 8 | low as u16;
 
                 Some(Instruction::new(
@@ -366,20 +437,27 @@ impl Cpu {
     }
     /// Transforms the given prefixed op code into an [`Instruction`] which can be executed by the
     /// [`Cpu`]. An op code is prefixed if the preceding op code byte was 0xCB.
-    fn decode_prefixed(&self, op_code: u8, memory: &Memory) -> Option<Instruction> {
+    fn decode_prefixed(&self, op_code: u8) -> Option<Instruction> {
+        tracing::debug!("decoding prefixed op code {:#4x}", op_code);
+
         todo!()
     }
-    /// Executes the specified [`Instruction`].
-    fn execute(&mut self, instruction: &Instruction) -> u16 {
-        tracing::debug!("executing instruction '{:?}'", instruction);
+    /// Executes the specified [`Instruction`] returning the new program counter value and whether
+    /// or not the op code for the next instruction is prefixed.
+    fn execute(&mut self, instruction: &Instruction) -> (u16, bool) {
+        tracing::debug!("executing instruction '{}'", instruction);
+
+        let mut prefix = false;
 
         match instruction.operation {
-            Operation::PREFIX => {}
+            Operation::NOP => {}
+            Operation::PREFIX => prefix = true,
             _ => todo!(),
         }
 
-        self.prefixed = instruction.operation == Operation::PREFIX;
-        self.pc.wrapping_add(instruction.num_bytes)
+        let new_pc = self.registers.pc.wrapping_add(instruction.num_bytes);
+
+        (new_pc, prefix)
     }
 }
 
@@ -696,15 +774,28 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_prefix() {
+    fn test_cpu_execute_nop() {
+        let instruction = Instruction::new(1, 4, Operation::NOP);
+
+        let memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+
+        let (new_pc, prefix) = cpu.execute(&instruction);
+        assert_eq!(1, new_pc);
+        assert!(!prefix);
+    }
+
+    #[test]
+    fn test_cpu_execute_prefix() {
         let instruction = Instruction::new(1, 4, Operation::PREFIX);
 
         let memory = Memory::new();
 
         let mut cpu = Cpu::new();
 
-        let new_pc = cpu.execute(&instruction);
+        let (new_pc, prefix) = cpu.execute(&instruction);
         assert_eq!(1, new_pc);
-        assert!(cpu.prefixed);
+        assert!(prefix);
     }
 }
