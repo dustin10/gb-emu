@@ -4,7 +4,7 @@ use bounded_vec_deque::BoundedVecDeque;
 use std::{collections::VecDeque, fmt::Display};
 
 /// Represents the registers on the cpu. Allows for easy manipulation of combined 16-bit registers as well.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct Registers {
     /// A register.
     a: u8,
@@ -106,11 +106,7 @@ impl Flags {
     }
     /// Sets the status of the carry flag.
     fn set_c(&mut self, on: bool) {
-        if on {
-            self.0 |= 1 << FLAGS_CARRY_BIT_POSITION;
-        } else {
-            self.0 &= 0 << 1;
-        }
+        self.set_flag(FLAGS_CARRY_BIT_POSITION, on);
     }
     /// Retrieves the current status of the half carry flag.
     fn h(&self) -> bool {
@@ -118,11 +114,7 @@ impl Flags {
     }
     /// Sets the status of the half carry flag.
     fn set_h(&mut self, on: bool) {
-        if on {
-            self.0 |= 1 << FLAGS_HALF_CARRY_BIT_POSITION;
-        } else {
-            self.0 &= 0 << 1;
-        }
+        self.set_flag(FLAGS_HALF_CARRY_BIT_POSITION, on);
     }
     /// Retrieves the current status of the subtract flag.
     fn n(&self) -> bool {
@@ -130,11 +122,7 @@ impl Flags {
     }
     /// Sets the status of the substract flag.
     fn set_n(&mut self, on: bool) {
-        if on {
-            self.0 |= 1 << FLAGS_SUBTRACT_BIT_POSITION;
-        } else {
-            self.0 &= 0 << 1;
-        }
+        self.set_flag(FLAGS_SUBTRACT_BIT_POSITION, on);
     }
     /// Retrieves the current status of the zero flag.
     fn z(&self) -> bool {
@@ -142,10 +130,15 @@ impl Flags {
     }
     /// Sets the status of the zero flag.
     fn set_z(&mut self, on: bool) {
-        if on {
-            self.0 |= 1 << FLAGS_ZERO_BIT_POSITION;
-        } else {
-            self.0 &= 0 << 1;
+        self.set_flag(FLAGS_ZERO_BIT_POSITION, on);
+    }
+    /// Sets the status of the flag at the given position.
+    fn set_flag(&mut self, pos: u8, on: bool) {
+        let flag = 1 << pos;
+        let is_set = (self.0 & flag) != 0;
+
+        if is_set != on {
+            self.0 ^= flag
         }
     }
 }
@@ -263,6 +256,9 @@ enum Operation {
     /// Loads the value from the `A` register and stores it in the memory address corresponding to
     /// the value in the [`Load16BitTarget`] register.
     LDA { target: Load16BitTarget },
+    /// Loads the value from memory at the address  `A` register and stores it in the memory address
+    /// corresponding to the value of the [`Load8BitTarget`] register and stores it in the `A` register.
+    LDAMEM { target: Load16BitTarget },
     /// Loads the value in the [`Load16BitTarget`] register and stores it at the address in memory.
     LDA16 {
         address: u16,
@@ -277,7 +273,7 @@ enum Operation {
     /// Prefix op code which causes the subsequent byte to represent a different set of
     /// instructions.
     PREFIX,
-    /// Bit rotate the A register register left by one, not through the carry flag.
+    /// Bit rotate the `A` register register left by one, not through the carry flag.
     RLCA,
 }
 
@@ -288,6 +284,8 @@ impl Display for Operation {
             Operation::ADDHL { target } => f.write_fmt(format_args!("ADD HL, {}", target)),
             Operation::DEC { target } => f.write_fmt(format_args!("DEC {}", target)),
             Operation::INC { target } => f.write_fmt(format_args!("INC {}", target)),
+            Operation::LDA { target } => f.write_fmt(format_args!("LD [{}], A", target)),
+            Operation::LDAMEM { target } => f.write_fmt(format_args!("LD A, [{}]", target)),
             Operation::LDA16 { address, target } => {
                 f.write_fmt(format_args!("LD [{:#6x}] {}", address, target))
             }
@@ -297,7 +295,6 @@ impl Display for Operation {
             Operation::LDN8 { target, value } => {
                 f.write_fmt(format_args!("LD {}, {:#4x}", target, value))
             }
-            Operation::LDA { target } => f.write_fmt(format_args!("LD [{}], A", target)),
             Operation::NOP => f.write_str("NOP"),
             Operation::PREFIX => f.write_str("PREFIX"),
             Operation::RLCA => f.write_str("RLCA"),
@@ -348,6 +345,11 @@ impl Instruction {
     /// the address held in the target register.
     fn ld_a(target: Load16BitTarget) -> Self {
         Self::new(1, 8, Operation::LDA { target })
+    }
+    /// Creates a new instruction which loads the the byte from memory at the address corresponding
+    /// to the value of the [`Load8BitTarget`] register and stores it in the `A` register.
+    fn ld_a_mem(target: Load16BitTarget) -> Self {
+        Self::new(1, 8, Operation::LDAMEM { target })
     }
     /// Creates a new instruction which loads the value in the target register and stores it at
     /// the given address in memory.
@@ -491,6 +493,7 @@ impl Cpu {
                 Load16BitTarget::SP,
             )),
             0x09 => Some(Instruction::add_hl(Target::BC)),
+            0x0A => Some(Instruction::ld_a_mem(Load16BitTarget::BC)),
             0xCB => Some(Instruction::prefix()),
             _ => None,
         }
@@ -510,6 +513,19 @@ impl Cpu {
         let mut prefix = false;
 
         match instruction.operation {
+            // TODO: cleanup dec impl
+            Operation::DEC { target } => match target {
+                Target::B => {
+                    let old_value = self.registers.b;
+                    self.registers.b -= 1;
+
+                    self.registers.f.set_z(self.registers.b == 0);
+                    self.registers.f.set_n(true);
+                    self.registers.f.set_h(will_half_carry_sub(old_value, 1));
+                }
+                _ => todo!(),
+            },
+            // TODO: cleanup inc impl
             Operation::INC { target } => match target {
                 Target::B => {
                     let old_value = self.registers.b;
@@ -530,6 +546,10 @@ impl Cpu {
 
                 memory.write_byte(address, self.registers.a);
             }
+            Operation::LDN8 { target, value } => match target {
+                Load8BitTarget::B => self.registers.b = value,
+                _ => todo!(),
+            },
             Operation::LDN16 { target, value } => match target {
                 Load16BitTarget::BC => self.registers.set_bc(value),
                 _ => todo!(),
@@ -548,6 +568,11 @@ impl Cpu {
 /// Detrmines if the addtion of `b` to `a` will cause a half-carry.
 fn will_half_carry_add(a: u8, b: u8) -> bool {
     (((a & 0x0F) + (b & 0x0F)) & 0x10) == 0x10
+}
+
+/// Detrmines if the subtraction of `b` from `a` will cause a half-carry.
+fn will_half_carry_sub(a: u8, b: u8) -> bool {
+    (((a & 0x0F) as i32) - ((b & 0x0F) as i32)) < 0
 }
 
 #[cfg(test)]
@@ -585,10 +610,12 @@ mod tests {
         let mut flags = Flags::new();
         assert!(!flags.n());
 
+        println!("flags: {:#4x}", flags.0);
         flags.set_n(true);
         assert!(flags.n());
         assert_eq!(flags.0, 1 << FLAGS_SUBTRACT_BIT_POSITION);
 
+        println!("flags: {:#4x}", flags.0);
         flags.set_n(false);
         assert!(!flags.n());
     }
@@ -921,6 +948,61 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_execute_dec_b() {
+        {
+            let instruction = Instruction::dec(Target::B);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.b = 2;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(1, cpu.registers.b);
+            assert!(!cpu.registers.f.c());
+            assert!(!cpu.registers.f.h());
+            assert!(cpu.registers.f.n());
+            assert!(!cpu.registers.f.z());
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+        }
+        {
+            let instruction = Instruction::dec(Target::B);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.b = 0x10;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(0x0F, cpu.registers.b);
+            assert!(!cpu.registers.f.c());
+            assert!(cpu.registers.f.h());
+            assert!(cpu.registers.f.n());
+            assert!(!cpu.registers.f.z());
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+        }
+        {
+            let instruction = Instruction::dec(Target::B);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.b = 1;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(0, cpu.registers.b);
+            assert!(!cpu.registers.f.c());
+            assert!(!cpu.registers.f.h());
+            assert!(cpu.registers.f.n());
+            assert!(cpu.registers.f.z());
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+        }
+    }
+
+    #[test]
     fn test_cpu_execute_ld_a_bc() {
         let instruction = Instruction::ld_a(Load16BitTarget::BC);
 
@@ -948,6 +1030,20 @@ mod tests {
         assert_eq!(0xAE, cpu.registers.b);
         assert_eq!(0x24, cpu.registers.c);
         assert_eq!(3, new_pc);
+        assert!(!prefix);
+    }
+
+    #[test]
+    fn test_cpu_execute_ld_n8_b() {
+        let instruction = Instruction::ld_n8(Load8BitTarget::B, 0x12);
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+
+        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        assert_eq!(0x12, cpu.registers.b);
+        assert_eq!(2, new_pc);
         assert!(!prefix);
     }
 
