@@ -75,7 +75,7 @@ impl Emulator {
         }
 
         loop {
-            self.cpu.step(&self.memory);
+            self.cpu.step(&mut self.memory);
         }
     }
 }

@@ -17,6 +17,14 @@ impl Memory {
     pub fn read_byte(&self, address: u16) -> u8 {
         self.data[address as usize]
     }
+    /// Reads the next two bytes from the given address in memory and combines them into a single
+    /// u16 value.
+    pub fn read_u16(&self, address: u16) -> u16 {
+        let low = self.read_byte(address);
+        let high = self.read_byte(address + 1);
+
+        (high as u16) << 8 | low as u16
+    }
     /// Writes a single byte to memory at the given address.
     pub fn write_byte(&mut self, address: u16, byte: u8) {
         self.data[address as usize] = byte;
@@ -59,6 +67,15 @@ mod tests {
         memory.data[0x1010] = 200;
         let byte = memory.read_byte(0x1010);
         assert_eq!(200, byte);
+    }
+
+    #[test]
+    fn test_memory_read_u16() {
+        let mut memory = Memory::new();
+        memory.data[0x1010] = 0x01;
+        memory.data[0x1011] = 0x01;
+        let value = memory.read_u16(0x1010);
+        assert_eq!(0x0101, value);
     }
 
     #[test]
