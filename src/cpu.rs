@@ -884,7 +884,40 @@ mod tests {
 
     #[test]
     fn test_cpu_execute_inc_b() {
-        // TODO: tests for zero and half-carry as well as other
+        {
+            let instruction = Instruction::inc(Target::B);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.b = 1;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(2, cpu.registers.b);
+            assert!(!cpu.registers.f.c());
+            assert!(!cpu.registers.f.h());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.z());
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+        }
+        {
+            let instruction = Instruction::inc(Target::B);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.b = 0x0F;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(0x10, cpu.registers.b);
+            assert!(!cpu.registers.f.c());
+            assert!(cpu.registers.f.h());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.z());
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+        }
     }
 
     #[test]
