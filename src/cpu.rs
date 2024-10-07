@@ -275,6 +275,8 @@ enum Operation {
     PREFIX,
     /// Bit rotate the `A` register register left by one, not through the carry flag.
     RLCA,
+    /// Bit rotate the `A` register register right by one, not through the carry flag.
+    RRCA,
 }
 
 impl Display for Operation {
@@ -298,6 +300,7 @@ impl Display for Operation {
             Operation::NOP => f.write_str("NOP"),
             Operation::PREFIX => f.write_str("PREFIX"),
             Operation::RLCA => f.write_str("RLCA"),
+            Operation::RRCA => f.write_str("RRCA"),
         }
     }
 }
@@ -382,6 +385,11 @@ impl Instruction {
     /// through the carry flag.
     fn rlca() -> Self {
         Self::new(1, 4, Operation::RLCA)
+    }
+    /// Creates a new instruction that bit rotates the value in the `A` register right by one, not
+    /// through the carry flag.
+    fn rrca() -> Self {
+        Self::new(1, 4, Operation::RRCA)
     }
 }
 
@@ -478,6 +486,7 @@ impl Cpu {
         tracing::debug!("decoding op code {:#4x}", op_code);
 
         match op_code {
+            // 0x0x
             0x00 => Some(Instruction::nop()),
             0x01 => Some(Instruction::ld_n16(
                 Load16BitTarget::BC,
@@ -500,6 +509,14 @@ impl Cpu {
             0x0A => Some(Instruction::ld_a_mem(Load16BitTarget::BC)),
             0x0B => Some(Instruction::dec_wide(Target::BC)),
             0x0C => Some(Instruction::inc(Target::C)),
+            0x0D => Some(Instruction::dec(Target::C)),
+            0x0E => Some(Instruction::ld_n8(
+                Load8BitTarget::C,
+                memory.read_byte(self.registers.pc + 1),
+            )),
+            0x0F => Some(Instruction::rrca()),
+
+            // 0xCx
             0xCB => Some(Instruction::prefix()),
             _ => None,
         }
@@ -542,6 +559,14 @@ impl Cpu {
                     self.registers.b -= 1;
 
                     self.registers.f.set_z(self.registers.b == 0);
+                    self.registers.f.set_n(true);
+                    self.registers.f.set_h(will_half_carry_sub_u8(old_value, 1));
+                }
+                Target::C => {
+                    let old_value = self.registers.c;
+                    self.registers.c -= 1;
+
+                    self.registers.f.set_z(self.registers.c == 0);
                     self.registers.f.set_n(true);
                     self.registers.f.set_h(will_half_carry_sub_u8(old_value, 1));
                 }
@@ -595,6 +620,7 @@ impl Cpu {
             },
             Operation::LDN8 { target, value } => match target {
                 Load8BitTarget::B => self.registers.b = value,
+                Load8BitTarget::C => self.registers.c = value,
                 _ => todo!(),
             },
             Operation::LDN16 { target, value } => match target {
@@ -603,11 +629,24 @@ impl Cpu {
             },
             Operation::NOP => {}
             Operation::PREFIX => prefix = true,
+            // TODO: cleanup
             Operation::RLCA => {
                 let will_carry = (self.registers.a & (1 << 7)) != 0;
                 let truncated_bit = self.registers.a & (1 << 7);
 
                 self.registers.a = (self.registers.a << 1) | truncated_bit;
+
+                self.registers.f.set_z(false);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(will_carry);
+            }
+            // TODO: cleanup
+            Operation::RRCA => {
+                let will_carry = (self.registers.a & 1) != 0;
+                let truncated_bit = (self.registers.a & 1);
+
+                self.registers.a = (self.registers.a >> 1) | (truncated_bit << 7);
 
                 self.registers.f.set_z(false);
                 self.registers.f.set_n(false);
@@ -839,7 +878,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cpu_decode_ld_b_n8() {
+    fn test_cpu_decode_ld_n8_b() {
         let op_code: u8 = 0x06;
 
         let mut memory = Memory::new();
@@ -995,6 +1034,55 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(4, instruction.clock_ticks);
         assert_eq!(Operation::INC { target: Target::C }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_dec_c() {
+        let op_code: u8 = 0x0D;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::DEC { target: Target::C }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_n8_c() {
+        let op_code: u8 = 0x0E;
+
+        let mut memory = Memory::new();
+        memory.write_byte(1, 20);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDN8 {
+                target: Load8BitTarget::C,
+                value: 20
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_rrca() {
+        let op_code: u8 = 0x0F;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::RRCA, instruction.operation);
     }
 
     #[test]
@@ -1430,6 +1518,113 @@ mod tests {
             assert!(!cpu.registers.f.z());
             assert_eq!(1, new_pc);
             assert!(!prefix);
+        }
+    }
+
+    #[test]
+    fn test_cpu_execute_dec_c() {
+        {
+            let instruction = Instruction::dec(Target::C);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.c = 2;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(1, cpu.registers.c);
+            assert!(!cpu.registers.f.c());
+            assert!(!cpu.registers.f.h());
+            assert!(cpu.registers.f.n());
+            assert!(!cpu.registers.f.z());
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+        }
+        {
+            let instruction = Instruction::dec(Target::C);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.c = 1;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(0, cpu.registers.c);
+            assert!(!cpu.registers.f.c());
+            assert!(!cpu.registers.f.h());
+            assert!(cpu.registers.f.n());
+            assert!(cpu.registers.f.z());
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+        }
+        {
+            let instruction = Instruction::dec(Target::C);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.c = 0x10;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(0x0F, cpu.registers.c);
+            assert!(!cpu.registers.f.c());
+            assert!(cpu.registers.f.h());
+            assert!(cpu.registers.f.n());
+            assert!(!cpu.registers.f.z());
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+        }
+    }
+
+    #[test]
+    fn test_cpu_execute_ld_n8_c() {
+        let instruction = Instruction::ld_n8(Load8BitTarget::C, 0x33);
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+
+        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        assert_eq!(0x33, cpu.registers.c);
+        assert_eq!(2, new_pc);
+        assert!(!prefix);
+    }
+
+    #[test]
+    fn test_cpu_execute_rrca() {
+        {
+            let instruction = Instruction::rrca();
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.a = 0b00010000;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+            assert_eq!(0b00001000, cpu.registers.a);
+            assert!(!cpu.registers.f.z());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.h());
+            assert!(!cpu.registers.f.c());
+        }
+        {
+            let instruction = Instruction::rrca();
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.a = 0b00000001;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+            assert_eq!(0b10000000, cpu.registers.a);
+            assert!(!cpu.registers.f.z());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.h());
+            assert!(cpu.registers.f.c());
         }
     }
 }
