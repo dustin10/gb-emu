@@ -546,6 +546,16 @@ impl Cpu {
 
                 memory.write_byte(address, self.registers.a);
             }
+            Operation::LDA16 { address, target } => match target {
+                Load16BitTarget::SP => {
+                    let low = self.registers.sp as u8;
+                    let high = (self.registers.sp >> 8) as u8;
+
+                    memory.write_byte(address, low);
+                    memory.write_byte(address + 1, high);
+                }
+                _ => todo!(),
+            },
             Operation::LDN8 { target, value } => match target {
                 Load8BitTarget::B => self.registers.b = value,
                 _ => todo!(),
@@ -556,6 +566,18 @@ impl Cpu {
             },
             Operation::NOP => {}
             Operation::PREFIX => prefix = true,
+            Operation::RLCA => {
+                let will_carry = (self.registers.a & (1 << 7)) != 0;
+                let truncated_bit = self.registers.a & (1 << 7);
+                let new_value = (self.registers.a << 1) | truncated_bit;
+
+                self.registers.a = new_value;
+
+                self.registers.f.set_z(false);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(will_carry);
+            }
             _ => todo!(),
         }
 
@@ -1071,5 +1093,103 @@ mod tests {
         let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
         assert_eq!(1, new_pc);
         assert!(prefix);
+    }
+
+    #[test]
+    fn test_cpu_execute_rlca() {
+        {
+            let instruction = Instruction::rlca();
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.a = 16;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+            assert_eq!(32, cpu.registers.a);
+            assert!(!cpu.registers.f.z());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.h());
+            assert!(!cpu.registers.f.c());
+        }
+        {
+            let instruction = Instruction::rlca();
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.a = 255;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+            assert_eq!(254, cpu.registers.a);
+            assert!(!cpu.registers.f.z());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.h());
+            assert!(cpu.registers.f.c());
+        }
+    }
+
+    #[test]
+    fn test_cpu_execute_ld_a16_sp() {
+        {
+            let instruction = Instruction::ld_a16(0, Load16BitTarget::SP);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.sp = u16::MAX;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(3, new_pc);
+            assert!(!prefix);
+            assert_eq!(0xFF, memory.read_byte(0));
+            assert_eq!(0xFF, memory.read_byte(1));
+        }
+        {
+            let instruction = Instruction::ld_a16(0, Load16BitTarget::SP);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.sp = 0x00FF;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(3, new_pc);
+            assert!(!prefix);
+            assert_eq!(0xFF, memory.read_byte(0));
+            assert_eq!(0, memory.read_byte(1));
+        }
+        {
+            let instruction = Instruction::ld_a16(0, Load16BitTarget::SP);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.sp = 0xFF00;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(3, new_pc);
+            assert!(!prefix);
+            assert_eq!(0, memory.read_byte(0));
+            assert_eq!(0xFF, memory.read_byte(1));
+        }
+        {
+            let instruction = Instruction::ld_a16(0, Load16BitTarget::SP);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.sp = 0x0F0F;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(3, new_pc);
+            assert!(!prefix);
+            assert_eq!(0x0F, memory.read_byte(0));
+            assert_eq!(0x0F, memory.read_byte(1));
+        }
     }
 }
