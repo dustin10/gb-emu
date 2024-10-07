@@ -273,10 +273,10 @@ enum Operation {
     /// Prefix op code which causes the subsequent byte to represent a different set of
     /// instructions.
     PREFIX,
-    /// Bit rotate the `A` register register left by one, not through the carry flag.
-    RLCA,
-    /// Bit rotate the `A` register register right by one, not through the carry flag.
-    RRCA,
+    /// Bit rotate the [`Target`] register left by one, not through the carry flag.
+    RLC { target: Target },
+    /// Bit rotate the [`Target`] register right by one, not through the carry flag.
+    RRC { target: Target },
 }
 
 impl Display for Operation {
@@ -299,8 +299,14 @@ impl Display for Operation {
             }
             Operation::NOP => f.write_str("NOP"),
             Operation::PREFIX => f.write_str("PREFIX"),
-            Operation::RLCA => f.write_str("RLCA"),
-            Operation::RRCA => f.write_str("RRCA"),
+            Operation::RLC { target } => match target {
+                Target::A => f.write_str("RLCA"),
+                _ => f.write_fmt(format_args!("RLC {}", target)),
+            },
+            Operation::RRC { target } => match target {
+                Target::A => f.write_str("RRCA"),
+                _ => f.write_fmt(format_args!("RRC {}", target)),
+            },
         }
     }
 }
@@ -381,15 +387,25 @@ impl Instruction {
     fn prefix() -> Self {
         Self::new(1, 4, Operation::PREFIX)
     }
+    /// Creates a new instruction that bit rotates the value in the [`Target`] register left by
+    /// one, not through the carry flag.
+    fn rlc(target: Target) -> Self {
+        Self::new(1, 4, Operation::RLC { target })
+    }
     /// Creates a new instruction that bit rotates the value in the `A` register left by one, not
     /// through the carry flag.
     fn rlca() -> Self {
-        Self::new(1, 4, Operation::RLCA)
+        Self::rlc(Target::A)
+    }
+    /// Creates a new instruction that bit rotates the value in the [`Target`] register right by
+    /// one, not through the carry flag.
+    fn rrc(target: Target) -> Self {
+        Self::new(1, 4, Operation::RRC { target })
     }
     /// Creates a new instruction that bit rotates the value in the `A` register right by one, not
     /// through the carry flag.
     fn rrca() -> Self {
-        Self::new(1, 4, Operation::RRCA)
+        Self::rrc(Target::A)
     }
 }
 
@@ -630,11 +646,16 @@ impl Cpu {
             Operation::NOP => {}
             Operation::PREFIX => prefix = true,
             // TODO: cleanup
-            Operation::RLCA => {
-                let will_carry = (self.registers.a & (1 << 7)) != 0;
-                let truncated_bit = self.registers.a & (1 << 7);
+            Operation::RLC { target } => {
+                let mut value = match target {
+                    Target::A => &mut self.registers.a,
+                    _ => panic!("not implemented"),
+                };
 
-                self.registers.a = (self.registers.a << 1) | truncated_bit;
+                let will_carry = (*value & (1 << 7)) != 0;
+                let truncated_bit = *value & (1 << 7);
+
+                *value = (*value << 1) | truncated_bit;
 
                 self.registers.f.set_z(false);
                 self.registers.f.set_n(false);
@@ -642,11 +663,16 @@ impl Cpu {
                 self.registers.f.set_c(will_carry);
             }
             // TODO: cleanup
-            Operation::RRCA => {
-                let will_carry = (self.registers.a & 1) != 0;
-                let truncated_bit = (self.registers.a & 1);
+            Operation::RRC { target } => {
+                let mut value = match target {
+                    Target::A => &mut self.registers.a,
+                    _ => panic!("not implemented"),
+                };
 
-                self.registers.a = (self.registers.a >> 1) | (truncated_bit << 7);
+                let will_carry = (*value & 1) != 0;
+                let truncated_bit = (*value & 1);
+
+                *value = (*value >> 1) | (truncated_bit << 7);
 
                 self.registers.f.set_z(false);
                 self.registers.f.set_n(false);
@@ -909,7 +935,7 @@ mod tests {
         let instruction = cpu.decode(op_code, &memory).expect("valid op code");
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(4, instruction.clock_ticks);
-        assert_eq!(Operation::RLCA, instruction.operation);
+        assert_eq!(Operation::RLC { target: Target::A }, instruction.operation);
     }
 
     #[test]
@@ -1082,7 +1108,7 @@ mod tests {
         let instruction = cpu.decode(op_code, &memory).expect("valid op code");
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(4, instruction.clock_ticks);
-        assert_eq!(Operation::RRCA, instruction.operation);
+        assert_eq!(Operation::RRC { target: Target::A }, instruction.operation);
     }
 
     #[test]
