@@ -499,6 +499,7 @@ impl Cpu {
             0x09 => Some(Instruction::add_hl(Target::BC)),
             0x0A => Some(Instruction::ld_a_mem(Load16BitTarget::BC)),
             0x0B => Some(Instruction::dec_wide(Target::BC)),
+            0x0C => Some(Instruction::inc(Target::C)),
             0xCB => Some(Instruction::prefix()),
             _ => None,
         }
@@ -556,6 +557,14 @@ impl Cpu {
                     self.registers.b += 1;
 
                     self.registers.f.set_z(self.registers.b == 0);
+                    self.registers.f.set_n(false);
+                    self.registers.f.set_h(will_half_carry_add_u8(old_value, 1));
+                }
+                Target::C => {
+                    let old_value = self.registers.c;
+                    self.registers.c += 1;
+
+                    self.registers.f.set_z(self.registers.c == 0);
                     self.registers.f.set_n(false);
                     self.registers.f.set_h(will_half_carry_add_u8(old_value, 1));
                 }
@@ -939,6 +948,53 @@ mod tests {
             Operation::ADDHL { target: Target::BC },
             instruction.operation
         );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_a_mem_bc() {
+        let op_code: u8 = 0x0A;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDAMEM {
+                target: Load16BitTarget::BC
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_dec_bc() {
+        let op_code: u8 = 0x0B;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::DEC { target: Target::BC }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_inc_c() {
+        let op_code: u8 = 0x0C;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::INC { target: Target::C }, instruction.operation);
     }
 
     #[test]
@@ -1337,5 +1393,43 @@ mod tests {
         assert_eq!(1, new_pc);
         assert!(!prefix);
         assert_eq!(1, cpu.registers.bc());
+    }
+
+    #[test]
+    fn test_cpu_execute_inc_c() {
+        {
+            let instruction = Instruction::inc(Target::C);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.c = 1;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(2, cpu.registers.c);
+            assert!(!cpu.registers.f.c());
+            assert!(!cpu.registers.f.h());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.z());
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+        }
+        {
+            let instruction = Instruction::inc(Target::C);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.c = 0x0F;
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(0x10, cpu.registers.c);
+            assert!(!cpu.registers.f.c());
+            assert!(cpu.registers.f.h());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.z());
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+        }
     }
 }
