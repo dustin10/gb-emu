@@ -194,10 +194,10 @@ impl Display for Target {
     }
 }
 
-/// Enumeration of the valid target 8 bit registers for the load instructions.
+/// Enumeration of the valid target 8 bit registers for the cpu instructions.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Load8BitTarget {
+enum Target8Bit {
     /// A register.
     A,
     /// B register.
@@ -214,17 +214,17 @@ enum Load8BitTarget {
     L,
 }
 
-impl Display for Load8BitTarget {
-    /// Writes a string representation of the [`Load8BitTarget`] to the formatter.
+impl Display for Target8Bit {
+    /// Writes a string representation of the [`Target8Bit`] to the formatter.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{:?}", self))
     }
 }
 
-/// Enumeration of the valid target 16 bit registers for the load instructions.
+/// Enumeration of the valid target 16-bit registers for the load instructions.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Load16BitTarget {
+enum Target16Bit {
     /// Combined BC 16-bit register.
     BC,
     /// Combined DE 16-bit register.
@@ -235,8 +235,8 @@ enum Load16BitTarget {
     SP,
 }
 
-impl Display for Load16BitTarget {
-    /// Writes a string representation of the [`Load16BitTarget`] to the formatter.
+impl Display for Target16Bit {
+    /// Writes a string representation of the [`Target16Bit`] to the formatter.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{:?}", self))
     }
@@ -260,28 +260,28 @@ enum Operation {
         target: Target,
     },
     /// Loads the value from the `A` register and stores it in the memory address corresponding to
-    /// the value in the [`Load16BitTarget`] register.
+    /// the value in the [`Target16Bit`] register.
     LDA {
-        target: Load16BitTarget,
+        target: Target16Bit,
     },
     /// Loads the value from memory at the address  `A` register and stores it in the memory address
-    /// corresponding to the value of the [`Load8BitTarget`] register and stores it in the `A` register.
+    /// corresponding to the value of the [`Target8Bit`] register and stores it in the `A` register.
     LDAMEM {
-        target: Load16BitTarget,
+        target: Target16Bit,
     },
-    /// Loads the value in the [`Load16BitTarget`] register and stores it at the address in memory.
+    /// Loads the value in the [`Target16Bit`] register and stores it at the address in memory.
     LDA16 {
         address: u16,
-        target: Load16BitTarget,
+        target: Target16Bit,
     },
-    /// Loads the [`u16`] value from memory and stores it in the [`Load16BitTarget`] register.
-    LDN16 {
-        target: Load16BitTarget,
+    /// Loads the [`u16`] value from memory and stores it in the [`Target16Bit`] register.
+    LDU16 {
+        target: Target16Bit,
         value: u16,
     },
-    /// Loads the [`u8`] value from memory and stores it in the [`Load8BitTarget`] register.
-    LDN8 {
-        target: Load8BitTarget,
+    /// Loads the [`u8`] value from memory and stores it in the [`Target8Bit`] register.
+    LDU8 {
+        target: Target8Bit,
         value: u8,
     },
     /// No operation.
@@ -312,10 +312,10 @@ impl Display for Operation {
             Operation::LDA16 { address, target } => {
                 f.write_fmt(format_args!("LD [{:#6x}] {}", address, target))
             }
-            Operation::LDN16 { target, value } => {
+            Operation::LDU16 { target, value } => {
                 f.write_fmt(format_args!("LD {}, {:#6x}", target, value))
             }
-            Operation::LDN8 { target, value } => {
+            Operation::LDU8 { target, value } => {
                 f.write_fmt(format_args!("LD {}, {:#4x}", target, value))
             }
             Operation::NOP => f.write_str("NOP"),
@@ -378,28 +378,28 @@ impl Instruction {
     }
     /// Creates a new instruction which loads the the contents of the `A` register into memory at
     /// the address held in the target register.
-    fn ld_a(target: Load16BitTarget) -> Self {
+    fn ld_a(target: Target16Bit) -> Self {
         Self::new(1, 8, Operation::LDA { target })
     }
     /// Creates a new instruction which loads the the byte from memory at the address corresponding
-    /// to the value of the [`Load8BitTarget`] register and stores it in the `A` register.
-    fn ld_a_mem(target: Load16BitTarget) -> Self {
+    /// to the value of the [`Target8Bit`] register and stores it in the `A` register.
+    fn ld_a_mem(target: Target16Bit) -> Self {
         Self::new(1, 8, Operation::LDAMEM { target })
     }
     /// Creates a new instruction which loads the value in the target register and stores it at
     /// the given address in memory.
-    fn ld_a16(address: u16, target: Load16BitTarget) -> Self {
+    fn ld_a16(address: u16, target: Target16Bit) -> Self {
         Self::new(3, 20, Operation::LDA16 { address, target })
     }
     /// Creates a new load immediate n8 instruction with the given target 8 bit register and
     /// value to load.
-    fn ld_n8(target: Load8BitTarget, value: u8) -> Self {
-        Self::new(2, 8, Operation::LDN8 { target, value })
+    fn ld_u8(target: Target8Bit, value: u8) -> Self {
+        Self::new(2, 8, Operation::LDU8 { target, value })
     }
     /// Creates a new load immediate n16 instruction with the given target 16 bit register and
     /// value to load.
-    fn ld_n16(target: Load16BitTarget, value: u16) -> Self {
-        Self::new(3, 12, Operation::LDN16 { target, value })
+    fn ld_u16(target: Target16Bit, value: u16) -> Self {
+        Self::new(3, 12, Operation::LDU16 { target, value })
     }
     /// Creates a new no op instruction.
     fn nop() -> Self {
@@ -529,36 +529,42 @@ impl Cpu {
         match op_code {
             // 0x0x
             0x00 => Some(Instruction::nop()),
-            0x01 => Some(Instruction::ld_n16(
-                Load16BitTarget::BC,
+            0x01 => Some(Instruction::ld_u16(
+                Target16Bit::BC,
                 memory.read_u16(self.registers.pc + 1),
             )),
-            0x02 => Some(Instruction::ld_a(Load16BitTarget::BC)),
+            0x02 => Some(Instruction::ld_a(Target16Bit::BC)),
             0x03 => Some(Instruction::inc_wide(Target::BC)),
             0x04 => Some(Instruction::inc(Target::B)),
             0x05 => Some(Instruction::dec(Target::B)),
-            0x06 => Some(Instruction::ld_n8(
-                Load8BitTarget::B,
+            0x06 => Some(Instruction::ld_u8(
+                Target8Bit::B,
                 memory.read_byte(self.registers.pc + 1),
             )),
             0x07 => Some(Instruction::rlca()),
             0x08 => Some(Instruction::ld_a16(
                 memory.read_u16(self.registers.pc + 1),
-                Load16BitTarget::SP,
+                Target16Bit::SP,
             )),
             0x09 => Some(Instruction::add_hl(Target::BC)),
-            0x0A => Some(Instruction::ld_a_mem(Load16BitTarget::BC)),
+            0x0A => Some(Instruction::ld_a_mem(Target16Bit::BC)),
             0x0B => Some(Instruction::dec_wide(Target::BC)),
             0x0C => Some(Instruction::inc(Target::C)),
             0x0D => Some(Instruction::dec(Target::C)),
-            0x0E => Some(Instruction::ld_n8(
-                Load8BitTarget::C,
+            0x0E => Some(Instruction::ld_u8(
+                Target8Bit::C,
                 memory.read_byte(self.registers.pc + 1),
             )),
             0x0F => Some(Instruction::rrca()),
 
             // 0x1x
             0x10 => Some(Instruction::stop()),
+            0x11 => Some(Instruction::ld_u16(
+                Target16Bit::DE,
+                memory.read_u16(self.registers.pc + 1),
+            )),
+            0x12 => Some(Instruction::ld_a(Target16Bit::DE)),
+            0x13 => Some(Instruction::inc_wide(Target::DE)),
 
             // 0xCx
             0xCB => Some(Instruction::prefix()),
@@ -638,22 +644,24 @@ impl Cpu {
                     self.registers.f.set_h(will_half_carry_add_u8(old_value, 1));
                 }
                 Target::BC => self.registers.set_bc(self.registers.bc() + 1),
+                Target::DE => self.registers.set_de(self.registers.de() + 1),
                 _ => todo!(),
             },
             Operation::LDA { target } => {
                 let address = match target {
-                    Load16BitTarget::BC => self.registers.bc(),
+                    Target16Bit::BC => self.registers.bc(),
+                    Target16Bit::DE => self.registers.de(),
                     _ => todo!(),
                 };
 
                 memory.write_byte(address, self.registers.a);
             }
             Operation::LDAMEM { target } => match target {
-                Load16BitTarget::BC => self.registers.a = memory.read_byte(self.registers.bc()),
+                Target16Bit::BC => self.registers.a = memory.read_byte(self.registers.bc()),
                 _ => todo!(),
             },
             Operation::LDA16 { address, target } => match target {
-                Load16BitTarget::SP => {
+                Target16Bit::SP => {
                     let low = self.registers.sp as u8;
                     let high = (self.registers.sp >> 8) as u8;
 
@@ -662,13 +670,14 @@ impl Cpu {
                 }
                 _ => todo!(),
             },
-            Operation::LDN8 { target, value } => match target {
-                Load8BitTarget::B => self.registers.b = value,
-                Load8BitTarget::C => self.registers.c = value,
+            Operation::LDU8 { target, value } => match target {
+                Target8Bit::B => self.registers.b = value,
+                Target8Bit::C => self.registers.c = value,
                 _ => todo!(),
             },
-            Operation::LDN16 { target, value } => match target {
-                Load16BitTarget::BC => self.registers.set_bc(value),
+            Operation::LDU16 { target, value } => match target {
+                Target16Bit::BC => self.registers.set_bc(value),
+                Target16Bit::DE => self.registers.set_de(value),
                 _ => todo!(),
             },
             Operation::NOP => {}
@@ -812,7 +821,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cpu_decode_ld_n16_bc() {
+    fn test_cpu_decode_ld_u16_bc() {
         let op_code: u8 = 0x01;
 
         {
@@ -826,8 +835,8 @@ mod tests {
             assert_eq!(3, instruction.num_bytes);
             assert_eq!(12, instruction.clock_ticks);
             assert_eq!(
-                Operation::LDN16 {
-                    target: Load16BitTarget::BC,
+                Operation::LDU16 {
+                    target: Target16Bit::BC,
                     value: 1
                 },
                 instruction.operation
@@ -844,8 +853,8 @@ mod tests {
             assert_eq!(3, instruction.num_bytes);
             assert_eq!(12, instruction.clock_ticks);
             assert_eq!(
-                Operation::LDN16 {
-                    target: Load16BitTarget::BC,
+                Operation::LDU16 {
+                    target: Target16Bit::BC,
                     value: 256,
                 },
                 instruction.operation
@@ -862,8 +871,8 @@ mod tests {
             assert_eq!(3, instruction.num_bytes);
             assert_eq!(12, instruction.clock_ticks);
             assert_eq!(
-                Operation::LDN16 {
-                    target: Load16BitTarget::BC,
+                Operation::LDU16 {
+                    target: Target16Bit::BC,
                     value: 257,
                 },
                 instruction.operation
@@ -872,7 +881,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cpu_decode_ld_bc_a() {
+    fn test_cpu_decode_ld_a_bc() {
         let op_code: u8 = 0x02;
 
         let memory = Memory::new();
@@ -884,7 +893,7 @@ mod tests {
         assert_eq!(8, instruction.clock_ticks);
         assert_eq!(
             Operation::LDA {
-                target: Load16BitTarget::BC
+                target: Target16Bit::BC
             },
             instruction.operation
         );
@@ -933,7 +942,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cpu_decode_ld_n8_b() {
+    fn test_cpu_decode_ld_u8_b() {
         let op_code: u8 = 0x06;
 
         let mut memory = Memory::new();
@@ -945,8 +954,8 @@ mod tests {
         assert_eq!(2, instruction.num_bytes);
         assert_eq!(8, instruction.clock_ticks);
         assert_eq!(
-            Operation::LDN8 {
-                target: Load8BitTarget::B,
+            Operation::LDU8 {
+                target: Target8Bit::B,
                 value: 3
             },
             instruction.operation
@@ -984,7 +993,7 @@ mod tests {
             assert_eq!(
                 Operation::LDA16 {
                     address: 1,
-                    target: Load16BitTarget::SP
+                    target: Target16Bit::SP
                 },
                 instruction.operation
             );
@@ -1002,7 +1011,7 @@ mod tests {
             assert_eq!(
                 Operation::LDA16 {
                     address: 256,
-                    target: Load16BitTarget::SP,
+                    target: Target16Bit::SP,
                 },
                 instruction.operation
             );
@@ -1020,7 +1029,7 @@ mod tests {
             assert_eq!(
                 Operation::LDA16 {
                     address: 257,
-                    target: Load16BitTarget::SP,
+                    target: Target16Bit::SP,
                 },
                 instruction.operation
             );
@@ -1057,7 +1066,7 @@ mod tests {
         assert_eq!(8, instruction.clock_ticks);
         assert_eq!(
             Operation::LDAMEM {
-                target: Load16BitTarget::BC
+                target: Target16Bit::BC
             },
             instruction.operation
         );
@@ -1106,7 +1115,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cpu_decode_ld_n8_c() {
+    fn test_cpu_decode_ld_u8_c() {
         let op_code: u8 = 0x0E;
 
         let mut memory = Memory::new();
@@ -1118,8 +1127,8 @@ mod tests {
         assert_eq!(2, instruction.num_bytes);
         assert_eq!(8, instruction.clock_ticks);
         assert_eq!(
-            Operation::LDN8 {
-                target: Load8BitTarget::C,
+            Operation::LDU8 {
+                target: Target8Bit::C,
                 value: 20
             },
             instruction.operation
@@ -1152,6 +1161,99 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(4, instruction.clock_ticks);
         assert_eq!(Operation::STOP, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_u16_de() {
+        let op_code: u8 = 0x11;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x0001, 1);
+            memory.write_byte(0x0002, 0);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDU16 {
+                    target: Target16Bit::DE,
+                    value: 1
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x0001, 0);
+            memory.write_byte(0x0002, 1);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDU16 {
+                    target: Target16Bit::DE,
+                    value: 256,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x0001, 1);
+            memory.write_byte(0x0002, 1);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDU16 {
+                    target: Target16Bit::DE,
+                    value: 257,
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_a_de() {
+        let op_code: u8 = 0x12;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDA {
+                target: Target16Bit::DE
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_inc_de() {
+        let op_code: u8 = 0x13;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::INC { target: Target::DE }, instruction.operation);
     }
 
     #[test]
@@ -1278,7 +1380,7 @@ mod tests {
 
     #[test]
     fn test_cpu_execute_ld_a_bc() {
-        let instruction = Instruction::ld_a(Load16BitTarget::BC);
+        let instruction = Instruction::ld_a(Target16Bit::BC);
 
         let mut memory = Memory::new();
 
@@ -1293,8 +1395,8 @@ mod tests {
     }
 
     #[test]
-    fn test_cpu_execute_ld_n16_bc() {
-        let instruction = Instruction::ld_n16(Load16BitTarget::BC, 0xAE24);
+    fn test_cpu_execute_ld_u16_bc() {
+        let instruction = Instruction::ld_u16(Target16Bit::BC, 0xAE24);
 
         let mut memory = Memory::new();
 
@@ -1308,8 +1410,8 @@ mod tests {
     }
 
     #[test]
-    fn test_cpu_execute_ld_n8_b() {
-        let instruction = Instruction::ld_n8(Load8BitTarget::B, 0x12);
+    fn test_cpu_execute_ld_u8_b() {
+        let instruction = Instruction::ld_u8(Target8Bit::B, 0x12);
 
         let mut memory = Memory::new();
 
@@ -1388,7 +1490,7 @@ mod tests {
     #[test]
     fn test_cpu_execute_ld_a16_sp() {
         {
-            let instruction = Instruction::ld_a16(0, Load16BitTarget::SP);
+            let instruction = Instruction::ld_a16(0, Target16Bit::SP);
 
             let mut memory = Memory::new();
 
@@ -1402,7 +1504,7 @@ mod tests {
             assert_eq!(0xFF, memory.read_byte(1));
         }
         {
-            let instruction = Instruction::ld_a16(0, Load16BitTarget::SP);
+            let instruction = Instruction::ld_a16(0, Target16Bit::SP);
 
             let mut memory = Memory::new();
 
@@ -1416,7 +1518,7 @@ mod tests {
             assert_eq!(0, memory.read_byte(1));
         }
         {
-            let instruction = Instruction::ld_a16(0, Load16BitTarget::SP);
+            let instruction = Instruction::ld_a16(0, Target16Bit::SP);
 
             let mut memory = Memory::new();
 
@@ -1430,7 +1532,7 @@ mod tests {
             assert_eq!(0xFF, memory.read_byte(1));
         }
         {
-            let instruction = Instruction::ld_a16(0, Load16BitTarget::SP);
+            let instruction = Instruction::ld_a16(0, Target16Bit::SP);
 
             let mut memory = Memory::new();
 
@@ -1523,7 +1625,7 @@ mod tests {
 
     #[test]
     fn test_cpu_execute_ld_a_mem_bc() {
-        let instruction = Instruction::ld_a_mem(Load16BitTarget::BC);
+        let instruction = Instruction::ld_a_mem(Target16Bit::BC);
 
         let mut memory = Memory::new();
         memory.write_byte(2, 3);
@@ -1646,8 +1748,8 @@ mod tests {
     }
 
     #[test]
-    fn test_cpu_execute_ld_n8_c() {
-        let instruction = Instruction::ld_n8(Load8BitTarget::C, 0x33);
+    fn test_cpu_execute_ld_u8_c() {
+        let instruction = Instruction::ld_u8(Target8Bit::C, 0x33);
 
         let mut memory = Memory::new();
 
@@ -1695,5 +1797,51 @@ mod tests {
             assert!(!cpu.registers.f.h());
             assert!(cpu.registers.f.c());
         }
+    }
+
+    #[test]
+    fn test_cpu_execute_ld_u16_de() {
+        let instruction = Instruction::ld_u16(Target16Bit::DE, 0xAE24);
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+
+        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        assert_eq!(0xAE, cpu.registers.d);
+        assert_eq!(0x24, cpu.registers.e);
+        assert_eq!(3, new_pc);
+        assert!(!prefix);
+    }
+
+    #[test]
+    fn test_cpu_execute_ld_a_de() {
+        let instruction = Instruction::ld_a(Target16Bit::DE);
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+        cpu.registers.a = 0x22;
+        cpu.registers.set_de(0x0F0F);
+
+        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        assert_eq!(0x22, memory.read_byte(0x0F0F));
+        assert_eq!(1, new_pc);
+        assert!(!prefix);
+    }
+
+    #[test]
+    fn test_cpu_execute_inc_de() {
+        let instruction = Instruction::inc_wide(Target::DE);
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+        cpu.registers.set_de(200);
+
+        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        assert_eq!(201, cpu.registers.de());
+        assert_eq!(1, new_pc);
+        assert!(!prefix);
     }
 }
