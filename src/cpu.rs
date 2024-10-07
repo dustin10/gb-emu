@@ -513,7 +513,23 @@ impl Cpu {
         let mut prefix = false;
 
         match instruction.operation {
-            // TODO: cleanup dec impl
+            // TODO: cleanup
+            Operation::ADDHL { target } => match target {
+                Target::BC => {
+                    let hl = self.registers.hl();
+                    let bc = self.registers.bc();
+
+                    let (new_value, overflowed) = hl.overflowing_add(bc);
+
+                    self.registers.set_hl(new_value);
+
+                    self.registers.f.set_n(false);
+                    self.registers.f.set_h(will_half_carry_add_u16(hl, bc));
+                    self.registers.f.set_c(overflowed);
+                }
+                _ => todo!(),
+            },
+            // TODO: cleanup
             Operation::DEC { target } => match target {
                 Target::B => {
                     let old_value = self.registers.b;
@@ -521,11 +537,11 @@ impl Cpu {
 
                     self.registers.f.set_z(self.registers.b == 0);
                     self.registers.f.set_n(true);
-                    self.registers.f.set_h(will_half_carry_sub(old_value, 1));
+                    self.registers.f.set_h(will_half_carry_sub_u8(old_value, 1));
                 }
                 _ => todo!(),
             },
-            // TODO: cleanup inc impl
+            // TODO: cleanup
             Operation::INC { target } => match target {
                 Target::B => {
                     let old_value = self.registers.b;
@@ -533,7 +549,7 @@ impl Cpu {
 
                     self.registers.f.set_z(self.registers.b == 0);
                     self.registers.f.set_n(false);
-                    self.registers.f.set_h(will_half_carry_add(old_value, 1));
+                    self.registers.f.set_h(will_half_carry_add_u8(old_value, 1));
                 }
                 Target::BC => self.registers.set_bc(self.registers.bc() + 1),
                 _ => todo!(),
@@ -546,6 +562,10 @@ impl Cpu {
 
                 memory.write_byte(address, self.registers.a);
             }
+            Operation::LDAMEM { target } => match target {
+                Load16BitTarget::BC => self.registers.a = memory.read_byte(self.registers.bc()),
+                _ => todo!(),
+            },
             Operation::LDA16 { address, target } => match target {
                 Load16BitTarget::SP => {
                     let low = self.registers.sp as u8;
@@ -569,9 +589,8 @@ impl Cpu {
             Operation::RLCA => {
                 let will_carry = (self.registers.a & (1 << 7)) != 0;
                 let truncated_bit = self.registers.a & (1 << 7);
-                let new_value = (self.registers.a << 1) | truncated_bit;
 
-                self.registers.a = new_value;
+                self.registers.a = (self.registers.a << 1) | truncated_bit;
 
                 self.registers.f.set_z(false);
                 self.registers.f.set_n(false);
@@ -588,13 +607,25 @@ impl Cpu {
 }
 
 /// Detrmines if the addtion of `b` to `a` will cause a half-carry.
-fn will_half_carry_add(a: u8, b: u8) -> bool {
-    (((a & 0x0F) + (b & 0x0F)) & 0x10) == 0x10
+fn will_half_carry_add_u8(a: u8, b: u8) -> bool {
+    (a & 0x0F) + (b & 0x0F) > 0x0F
+}
+
+/// Detrmines if the addtion of `b` to `a` will cause a half-carry. The half carry is calculated on
+/// the 11th bit.
+fn will_half_carry_add_u16(a: u16, b: u16) -> bool {
+    (a & 0x0FFF) + (b & 0x0FFF) > 0x0FFF
 }
 
 /// Detrmines if the subtraction of `b` from `a` will cause a half-carry.
-fn will_half_carry_sub(a: u8, b: u8) -> bool {
+fn will_half_carry_sub_u8(a: u8, b: u8) -> bool {
     (((a & 0x0F) as i32) - ((b & 0x0F) as i32)) < 0
+}
+
+/// Detrmines if the subtraction of `b` from `a` will cause a half-carry. The half carry is
+/// calculated on the 11th bit.
+fn will_half_carry_sub_u16(a: u16, b: u16) -> bool {
+    (((a & 0x0FFF) as i32) - ((b & 0x0FFF) as i32)) < 0
 }
 
 #[cfg(test)]
@@ -1191,5 +1222,79 @@ mod tests {
             assert_eq!(0x0F, memory.read_byte(0));
             assert_eq!(0x0F, memory.read_byte(1));
         }
+    }
+
+    #[test]
+    fn test_cpu_execute_add_hl_bc() {
+        {
+            let instruction = Instruction::add_hl(Target::BC);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.set_hl(1);
+            cpu.registers.set_bc(1);
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+            assert_eq!(2, cpu.registers.hl());
+            assert!(!cpu.registers.f.z());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.h());
+            assert!(!cpu.registers.f.c());
+        }
+        {
+            let instruction = Instruction::add_hl(Target::BC);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.set_hl(0x0FFF);
+            cpu.registers.set_bc(0x0001);
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+            assert_eq!(0x1000, cpu.registers.hl());
+            assert!(!cpu.registers.f.z());
+            assert!(!cpu.registers.f.n());
+            assert!(cpu.registers.f.h());
+            assert!(!cpu.registers.f.c());
+        }
+        {
+            let instruction = Instruction::add_hl(Target::BC);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.set_hl(0xFFFF);
+            cpu.registers.set_bc(0x0001);
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+            assert_eq!(0x0000, cpu.registers.hl());
+            assert!(!cpu.registers.f.z());
+            assert!(!cpu.registers.f.n());
+            assert!(cpu.registers.f.h());
+            assert!(cpu.registers.f.c());
+        }
+    }
+
+    #[test]
+    fn test_cpu_execute_ld_a_mem_bc() {
+        let instruction = Instruction::ld_a_mem(Load16BitTarget::BC);
+
+        let mut memory = Memory::new();
+        memory.write_byte(2, 3);
+
+        let mut cpu = Cpu::new();
+        cpu.registers.set_bc(2);
+
+        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        assert_eq!(1, new_pc);
+        assert!(!prefix);
+        assert_eq!(3, cpu.registers.a);
     }
 }
