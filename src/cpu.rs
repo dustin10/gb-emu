@@ -333,6 +333,10 @@ impl Instruction {
     fn dec(target: Target) -> Self {
         Self::new(1, 4, Operation::DEC { target })
     }
+    /// Creates a new decrement instruction that targets a combined 16 bit register.
+    fn dec_wide(target: Target) -> Self {
+        Self::new(1, 8, Operation::DEC { target })
+    }
     /// Creates a new increment instruction that targets an single 8 bit register.
     fn inc(target: Target) -> Self {
         Self::new(1, 4, Operation::INC { target })
@@ -494,6 +498,7 @@ impl Cpu {
             )),
             0x09 => Some(Instruction::add_hl(Target::BC)),
             0x0A => Some(Instruction::ld_a_mem(Load16BitTarget::BC)),
+            0x0B => Some(Instruction::dec_wide(Target::BC)),
             0xCB => Some(Instruction::prefix()),
             _ => None,
         }
@@ -538,6 +543,9 @@ impl Cpu {
                     self.registers.f.set_z(self.registers.b == 0);
                     self.registers.f.set_n(true);
                     self.registers.f.set_h(will_half_carry_sub_u8(old_value, 1));
+                }
+                Target::BC => {
+                    self.registers.set_bc(self.registers.bc() - 1);
                 }
                 _ => todo!(),
             },
@@ -1268,6 +1276,24 @@ mod tests {
             let mut memory = Memory::new();
 
             let mut cpu = Cpu::new();
+            cpu.registers.set_hl(0xFFFE);
+            cpu.registers.set_bc(0x0001);
+
+            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            assert_eq!(1, new_pc);
+            assert!(!prefix);
+            assert_eq!(0xFFFF, cpu.registers.hl());
+            assert!(!cpu.registers.f.z());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.h());
+            assert!(!cpu.registers.f.c());
+        }
+        {
+            let instruction = Instruction::add_hl(Target::BC);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
             cpu.registers.set_hl(0xFFFF);
             cpu.registers.set_bc(0x0001);
 
@@ -1296,5 +1322,20 @@ mod tests {
         assert_eq!(1, new_pc);
         assert!(!prefix);
         assert_eq!(3, cpu.registers.a);
+    }
+
+    #[test]
+    fn test_cpu_execute_dec_bc() {
+        let instruction = Instruction::dec_wide(Target::BC);
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+        cpu.registers.set_bc(2);
+
+        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        assert_eq!(1, new_pc);
+        assert!(!prefix);
+        assert_eq!(1, cpu.registers.bc());
     }
 }
