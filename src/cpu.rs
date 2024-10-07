@@ -248,35 +248,56 @@ impl Display for Load16BitTarget {
 enum Operation {
     /// Adds the value in the [`Target`] register to the value in the HL register and stores it
     /// back to the HL register.
-    ADDHL { target: Target },
+    ADDHL {
+        target: Target,
+    },
     /// Decrements the value in the [`Target`] register by one.
-    DEC { target: Target },
+    DEC {
+        target: Target,
+    },
     /// Increments the value in the [`Target`] register by one.
-    INC { target: Target },
+    INC {
+        target: Target,
+    },
     /// Loads the value from the `A` register and stores it in the memory address corresponding to
     /// the value in the [`Load16BitTarget`] register.
-    LDA { target: Load16BitTarget },
+    LDA {
+        target: Load16BitTarget,
+    },
     /// Loads the value from memory at the address  `A` register and stores it in the memory address
     /// corresponding to the value of the [`Load8BitTarget`] register and stores it in the `A` register.
-    LDAMEM { target: Load16BitTarget },
+    LDAMEM {
+        target: Load16BitTarget,
+    },
     /// Loads the value in the [`Load16BitTarget`] register and stores it at the address in memory.
     LDA16 {
         address: u16,
         target: Load16BitTarget,
     },
     /// Loads the [`u16`] value from memory and stores it in the [`Load16BitTarget`] register.
-    LDN16 { target: Load16BitTarget, value: u16 },
+    LDN16 {
+        target: Load16BitTarget,
+        value: u16,
+    },
     /// Loads the [`u8`] value from memory and stores it in the [`Load8BitTarget`] register.
-    LDN8 { target: Load8BitTarget, value: u8 },
+    LDN8 {
+        target: Load8BitTarget,
+        value: u8,
+    },
     /// No operation.
     NOP,
     /// Prefix op code which causes the subsequent byte to represent a different set of
     /// instructions.
     PREFIX,
     /// Bit rotate the [`Target`] register left by one, not through the carry flag.
-    RLC { target: Target },
+    RLC {
+        target: Target,
+    },
     /// Bit rotate the [`Target`] register right by one, not through the carry flag.
-    RRC { target: Target },
+    RRC {
+        target: Target,
+    },
+    STOP,
 }
 
 impl Display for Operation {
@@ -307,6 +328,7 @@ impl Display for Operation {
                 Target::A => f.write_str("RRCA"),
                 _ => f.write_fmt(format_args!("RRC {}", target)),
             },
+            Operation::STOP => f.write_str("STOP"),
         }
     }
 }
@@ -406,6 +428,9 @@ impl Instruction {
     /// through the carry flag.
     fn rrca() -> Self {
         Self::rrc(Target::A)
+    }
+    fn stop() -> Self {
+        Self::new(1, 4, Operation::STOP)
     }
 }
 
@@ -531,6 +556,9 @@ impl Cpu {
                 memory.read_byte(self.registers.pc + 1),
             )),
             0x0F => Some(Instruction::rrca()),
+
+            // 0x1x
+            0x10 => Some(Instruction::stop()),
 
             // 0xCx
             0xCB => Some(Instruction::prefix()),
@@ -679,6 +707,7 @@ impl Cpu {
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(will_carry);
             }
+            Operation::STOP => tracing::warn!("ignoring STOP instruction"),
             _ => todo!(),
         }
 
@@ -1109,6 +1138,20 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(4, instruction.clock_ticks);
         assert_eq!(Operation::RRC { target: Target::A }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_stop() {
+        let op_code: u8 = 0x10;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::STOP, instruction.operation);
     }
 
     #[test]
