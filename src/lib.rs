@@ -42,7 +42,7 @@ impl Cartridge {
     }
     /// Loads the cartridge data into emulator memory.
     pub fn load(&self, memory: &mut Memory) {
-        memory.write_block(CARTRIDGE_START_ADDRESS, &self.data);
+        memory.write_bytes(CARTRIDGE_START_ADDRESS, &self.data);
     }
 }
 

@@ -259,6 +259,10 @@ enum Operation {
     INC {
         target: Target,
     },
+    /// Jumps to a relative memory address by advancing the program counter by the offset.
+    JR {
+        offset: i8,
+    },
     /// Loads the value from the `A` register and stores it in the memory address corresponding to
     /// the value in the [`Target16Bit`] register.
     LDA {
@@ -289,6 +293,10 @@ enum Operation {
     /// Prefix op code which causes the subsequent byte to represent a different set of
     /// instructions.
     PREFIX,
+    /// Bit rotate the [`Target`] register left by one, through the carry flag.
+    RL {
+        target: Target,
+    },
     /// Bit rotate the [`Target`] register left by one, not through the carry flag.
     RLC {
         target: Target,
@@ -307,6 +315,7 @@ impl Display for Operation {
             Operation::ADDHL { target } => f.write_fmt(format_args!("ADD HL, {}", target)),
             Operation::DEC { target } => f.write_fmt(format_args!("DEC {}", target)),
             Operation::INC { target } => f.write_fmt(format_args!("INC {}", target)),
+            Operation::JR { offset } => f.write_fmt(format_args!("JR {:#4x}", offset)),
             Operation::LDA { target } => f.write_fmt(format_args!("LD [{}], A", target)),
             Operation::LDAMEM { target } => f.write_fmt(format_args!("LD A, [{}]", target)),
             Operation::LDA16 { address, target } => {
@@ -320,6 +329,10 @@ impl Display for Operation {
             }
             Operation::NOP => f.write_str("NOP"),
             Operation::PREFIX => f.write_str("PREFIX"),
+            Operation::RL { target } => match target {
+                Target::A => f.write_str("RLA"),
+                _ => f.write_fmt(format_args!("RL {}", target)),
+            },
             Operation::RLC { target } => match target {
                 Target::A => f.write_str("RLCA"),
                 _ => f.write_fmt(format_args!("RLC {}", target)),
@@ -376,6 +389,11 @@ impl Instruction {
     fn inc_u16(target: Target) -> Self {
         Self::new(1, 8, Operation::INC { target })
     }
+    /// Creates a new jump relative instruction that advances the program counter by the given
+    /// offset.
+    fn jr(offset: i8) -> Self {
+        Self::new(2, 12, Operation::JR { offset })
+    }
     /// Creates a new instruction which loads the the contents of the `A` register into memory at
     /// the address held in the target register.
     fn ld_a(target: Target16Bit) -> Self {
@@ -410,6 +428,16 @@ impl Instruction {
         Self::new(1, 4, Operation::PREFIX)
     }
     /// Creates a new instruction that bit rotates the value in the [`Target`] register left by
+    /// one through the carry flag.
+    fn rl(target: Target) -> Self {
+        Self::new(1, 4, Operation::RL { target })
+    }
+    /// Creates a new instruction that bit rotates the value in the `A` register left by one
+    /// through the carry flag.
+    fn rla() -> Self {
+        Self::rl(Target::A)
+    }
+    /// Creates a new instruction that bit rotates the value in the [`Target`] register left by
     /// one, not through the carry flag.
     fn rlc(target: Target) -> Self {
         Self::new(1, 4, Operation::RLC { target })
@@ -429,6 +457,7 @@ impl Instruction {
     fn rrca() -> Self {
         Self::rrc(Target::A)
     }
+    /// Creates a new stop instruction that is akin to [`Operation::NOP`] for the emulator.
     fn stop() -> Self {
         Self::new(1, 4, Operation::STOP)
     }
@@ -507,11 +536,11 @@ impl Cpu {
         };
 
         if let Some(instruction) = instruction {
-            let (new_pc, prefix) = self.execute(&instruction, memory);
+            self.registers.pc = self.registers.pc.wrapping_add(instruction.num_bytes);
 
-            self.registers.pc = new_pc;
+            self.execute(&instruction, memory);
 
-            self.instruction_set = if prefix {
+            self.instruction_set = if instruction.operation == Operation::PREFIX {
                 InstructionSet::Prefixed
             } else {
                 InstructionSet::Standard
@@ -571,6 +600,8 @@ impl Cpu {
                 Target8Bit::D,
                 memory.read_byte(self.registers.pc + 1),
             )),
+            0x17 => Some(Instruction::rla()),
+            0x18 => Some(Instruction::jr(memory.read_i8(self.registers.pc + 1))),
 
             // 0xCx
             0xCB => Some(Instruction::prefix()),
@@ -586,10 +617,8 @@ impl Cpu {
     }
     /// Executes the given [`Instruction`] returning the new program counter value and whether or
     /// not the op code for the next instruction is prefixed.
-    fn execute(&mut self, instruction: &Instruction, memory: &mut Memory) -> (u16, bool) {
+    fn execute(&mut self, instruction: &Instruction, memory: &mut Memory) {
         tracing::debug!("executing instruction '{}'", instruction);
-
-        let mut prefix = false;
 
         match instruction.operation {
             // TODO: cleanup
@@ -669,6 +698,9 @@ impl Cpu {
                 Target::DE => self.registers.set_de(self.registers.de() + 1),
                 _ => panic!("invalid INC target: {}", target),
             },
+            Operation::JR { offset } => {
+                self.registers.pc = self.registers.pc.wrapping_add_signed(offset.into());
+            }
             Operation::LDA { target } => {
                 let address = match target {
                     Target16Bit::BC => self.registers.bc(),
@@ -704,7 +736,25 @@ impl Cpu {
                 _ => todo!(),
             },
             Operation::NOP => {}
-            Operation::PREFIX => prefix = true,
+            Operation::PREFIX => {}
+            // TODO: cleanup
+            Operation::RL { target } => {
+                let mut value = match target {
+                    Target::A => &mut self.registers.a,
+                    _ => panic!("not implemented"),
+                };
+
+                let carry: u8 = self.registers.f.c().into();
+                let will_carry = (*value & (1 << 7)) != 0;
+
+                *value <<= 1;
+                *value |= carry;
+
+                self.registers.f.set_z(false);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(will_carry);
+            }
             // TODO: cleanup
             Operation::RLC { target } => {
                 let mut value = match target {
@@ -742,10 +792,6 @@ impl Cpu {
             Operation::STOP => tracing::warn!("ignoring STOP instruction"),
             _ => todo!(),
         }
-
-        let new_pc = self.registers.pc.wrapping_add(instruction.num_bytes);
-
-        (new_pc, prefix)
     }
 }
 
@@ -1329,6 +1375,48 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_rla() {
+        let op_code: u8 = 0x17;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::RL { target: Target::A }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_jr() {
+        let op_code: u8 = 0x18;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x01, 2);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(2, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(Operation::JR { offset: 2 }, instruction.operation);
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x01, 0xFF);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(2, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(Operation::JR { offset: -1 }, instruction.operation);
+        }
+    }
+
+    #[test]
     fn test_cpu_decode_prefix() {
         let op_code: u8 = 0xCB;
 
@@ -1351,10 +1439,8 @@ mod tests {
         let mut cpu = Cpu::new();
         cpu.registers.set_bc(200);
 
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        cpu.execute(&instruction, &mut memory);
         assert_eq!(201, cpu.registers.bc());
-        assert_eq!(1, new_pc);
-        assert!(!prefix);
     }
 
     #[test]
@@ -1367,14 +1453,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.b = 1;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(2, cpu.registers.b);
             assert!(!cpu.registers.f.c());
             assert!(!cpu.registers.f.h());
             assert!(!cpu.registers.f.n());
             assert!(!cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
         {
             let instruction = Instruction::inc(Target::B);
@@ -1384,14 +1468,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.b = 0x0F;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0x10, cpu.registers.b);
             assert!(!cpu.registers.f.c());
             assert!(cpu.registers.f.h());
             assert!(!cpu.registers.f.n());
             assert!(!cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
     }
 
@@ -1405,14 +1487,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.b = 2;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(1, cpu.registers.b);
             assert!(!cpu.registers.f.c());
             assert!(!cpu.registers.f.h());
             assert!(cpu.registers.f.n());
             assert!(!cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
         {
             let instruction = Instruction::dec(Target::B);
@@ -1422,14 +1502,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.b = 0x10;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0x0F, cpu.registers.b);
             assert!(!cpu.registers.f.c());
             assert!(cpu.registers.f.h());
             assert!(cpu.registers.f.n());
             assert!(!cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
         {
             let instruction = Instruction::dec(Target::B);
@@ -1439,14 +1517,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.b = 1;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0, cpu.registers.b);
             assert!(!cpu.registers.f.c());
             assert!(!cpu.registers.f.h());
             assert!(cpu.registers.f.n());
             assert!(cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
     }
 
@@ -1460,10 +1536,8 @@ mod tests {
         cpu.registers.a = 0x22;
         cpu.registers.set_bc(0x0F0F);
 
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        cpu.execute(&instruction, &mut memory);
         assert_eq!(0x22, memory.read_byte(0x0F0F));
-        assert_eq!(1, new_pc);
-        assert!(!prefix);
     }
 
     #[test]
@@ -1474,11 +1548,9 @@ mod tests {
 
         let mut cpu = Cpu::new();
 
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        cpu.execute(&instruction, &mut memory);
         assert_eq!(0xAE, cpu.registers.b);
         assert_eq!(0x24, cpu.registers.c);
-        assert_eq!(3, new_pc);
-        assert!(!prefix);
     }
 
     #[test]
@@ -1489,36 +1561,8 @@ mod tests {
 
         let mut cpu = Cpu::new();
 
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        cpu.execute(&instruction, &mut memory);
         assert_eq!(0x12, cpu.registers.b);
-        assert_eq!(2, new_pc);
-        assert!(!prefix);
-    }
-
-    #[test]
-    fn test_cpu_execute_nop() {
-        let instruction = Instruction::nop();
-
-        let mut memory = Memory::new();
-
-        let mut cpu = Cpu::new();
-
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-        assert_eq!(1, new_pc);
-        assert!(!prefix);
-    }
-
-    #[test]
-    fn test_cpu_execute_prefix() {
-        let instruction = Instruction::prefix();
-
-        let mut memory = Memory::new();
-
-        let mut cpu = Cpu::new();
-
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-        assert_eq!(1, new_pc);
-        assert!(prefix);
     }
 
     #[test]
@@ -1531,9 +1575,7 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.a = 16;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(32, cpu.registers.a);
             assert!(!cpu.registers.f.z());
             assert!(!cpu.registers.f.n());
@@ -1548,9 +1590,7 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.a = 255;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(254, cpu.registers.a);
             assert!(!cpu.registers.f.z());
             assert!(!cpu.registers.f.n());
@@ -1569,9 +1609,7 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.sp = u16::MAX;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-            assert_eq!(3, new_pc);
-            assert!(!prefix);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0xFF, memory.read_byte(0));
             assert_eq!(0xFF, memory.read_byte(1));
         }
@@ -1583,9 +1621,7 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.sp = 0x00FF;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-            assert_eq!(3, new_pc);
-            assert!(!prefix);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0xFF, memory.read_byte(0));
             assert_eq!(0, memory.read_byte(1));
         }
@@ -1597,9 +1633,7 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.sp = 0xFF00;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-            assert_eq!(3, new_pc);
-            assert!(!prefix);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0, memory.read_byte(0));
             assert_eq!(0xFF, memory.read_byte(1));
         }
@@ -1611,9 +1645,7 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.sp = 0x0F0F;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-            assert_eq!(3, new_pc);
-            assert!(!prefix);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0x0F, memory.read_byte(0));
             assert_eq!(0x0F, memory.read_byte(1));
         }
@@ -1630,9 +1662,7 @@ mod tests {
             cpu.registers.set_hl(1);
             cpu.registers.set_bc(1);
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(2, cpu.registers.hl());
             assert!(!cpu.registers.f.z());
             assert!(!cpu.registers.f.n());
@@ -1648,9 +1678,7 @@ mod tests {
             cpu.registers.set_hl(0x0FFF);
             cpu.registers.set_bc(0x0001);
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0x1000, cpu.registers.hl());
             assert!(!cpu.registers.f.z());
             assert!(!cpu.registers.f.n());
@@ -1666,9 +1694,7 @@ mod tests {
             cpu.registers.set_hl(0xFFFE);
             cpu.registers.set_bc(0x0001);
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0xFFFF, cpu.registers.hl());
             assert!(!cpu.registers.f.z());
             assert!(!cpu.registers.f.n());
@@ -1684,9 +1710,7 @@ mod tests {
             cpu.registers.set_hl(0xFFFF);
             cpu.registers.set_bc(0x0001);
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0x0000, cpu.registers.hl());
             assert!(!cpu.registers.f.z());
             assert!(!cpu.registers.f.n());
@@ -1705,9 +1729,7 @@ mod tests {
         let mut cpu = Cpu::new();
         cpu.registers.set_bc(2);
 
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-        assert_eq!(1, new_pc);
-        assert!(!prefix);
+        cpu.execute(&instruction, &mut memory);
         assert_eq!(3, cpu.registers.a);
     }
 
@@ -1720,9 +1742,7 @@ mod tests {
         let mut cpu = Cpu::new();
         cpu.registers.set_bc(2);
 
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-        assert_eq!(1, new_pc);
-        assert!(!prefix);
+        cpu.execute(&instruction, &mut memory);
         assert_eq!(1, cpu.registers.bc());
     }
 
@@ -1736,14 +1756,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.c = 1;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(2, cpu.registers.c);
             assert!(!cpu.registers.f.c());
             assert!(!cpu.registers.f.h());
             assert!(!cpu.registers.f.n());
             assert!(!cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
         {
             let instruction = Instruction::inc(Target::C);
@@ -1753,14 +1771,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.c = 0x0F;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0x10, cpu.registers.c);
             assert!(!cpu.registers.f.c());
             assert!(cpu.registers.f.h());
             assert!(!cpu.registers.f.n());
             assert!(!cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
     }
 
@@ -1774,14 +1790,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.c = 2;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(1, cpu.registers.c);
             assert!(!cpu.registers.f.c());
             assert!(!cpu.registers.f.h());
             assert!(cpu.registers.f.n());
             assert!(!cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
         {
             let instruction = Instruction::dec(Target::C);
@@ -1791,14 +1805,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.c = 1;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0, cpu.registers.c);
             assert!(!cpu.registers.f.c());
             assert!(!cpu.registers.f.h());
             assert!(cpu.registers.f.n());
             assert!(cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
         {
             let instruction = Instruction::dec(Target::C);
@@ -1808,14 +1820,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.c = 0x10;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0x0F, cpu.registers.c);
             assert!(!cpu.registers.f.c());
             assert!(cpu.registers.f.h());
             assert!(cpu.registers.f.n());
             assert!(!cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
     }
 
@@ -1827,10 +1837,8 @@ mod tests {
 
         let mut cpu = Cpu::new();
 
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        cpu.execute(&instruction, &mut memory);
         assert_eq!(0x33, cpu.registers.c);
-        assert_eq!(2, new_pc);
-        assert!(!prefix);
     }
 
     #[test]
@@ -1843,9 +1851,7 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.a = 0b00010000;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0b00001000, cpu.registers.a);
             assert!(!cpu.registers.f.z());
             assert!(!cpu.registers.f.n());
@@ -1860,9 +1866,7 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.a = 0b00000001;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0b10000000, cpu.registers.a);
             assert!(!cpu.registers.f.z());
             assert!(!cpu.registers.f.n());
@@ -1879,11 +1883,9 @@ mod tests {
 
         let mut cpu = Cpu::new();
 
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        cpu.execute(&instruction, &mut memory);
         assert_eq!(0xAE, cpu.registers.d);
         assert_eq!(0x24, cpu.registers.e);
-        assert_eq!(3, new_pc);
-        assert!(!prefix);
     }
 
     #[test]
@@ -1896,10 +1898,8 @@ mod tests {
         cpu.registers.a = 0x22;
         cpu.registers.set_de(0x0F0F);
 
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        cpu.execute(&instruction, &mut memory);
         assert_eq!(0x22, memory.read_byte(0x0F0F));
-        assert_eq!(1, new_pc);
-        assert!(!prefix);
     }
 
     #[test]
@@ -1911,10 +1911,8 @@ mod tests {
         let mut cpu = Cpu::new();
         cpu.registers.set_de(200);
 
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        cpu.execute(&instruction, &mut memory);
         assert_eq!(201, cpu.registers.de());
-        assert_eq!(1, new_pc);
-        assert!(!prefix);
     }
 
     #[test]
@@ -1927,14 +1925,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.d = 1;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(2, cpu.registers.d);
             assert!(!cpu.registers.f.c());
             assert!(!cpu.registers.f.h());
             assert!(!cpu.registers.f.n());
             assert!(!cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
         {
             let instruction = Instruction::inc(Target::D);
@@ -1944,14 +1940,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.d = 0x0F;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0x10, cpu.registers.d);
             assert!(!cpu.registers.f.c());
             assert!(cpu.registers.f.h());
             assert!(!cpu.registers.f.n());
             assert!(!cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
     }
 
@@ -1965,14 +1959,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.d = 2;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(1, cpu.registers.d);
             assert!(!cpu.registers.f.c());
             assert!(!cpu.registers.f.h());
             assert!(cpu.registers.f.n());
             assert!(!cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
         {
             let instruction = Instruction::dec(Target::D);
@@ -1982,14 +1974,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.d = 1;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0, cpu.registers.d);
             assert!(!cpu.registers.f.c());
             assert!(!cpu.registers.f.h());
             assert!(cpu.registers.f.n());
             assert!(cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
         {
             let instruction = Instruction::dec(Target::D);
@@ -1999,14 +1989,12 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.registers.d = 0x10;
 
-            let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+            cpu.execute(&instruction, &mut memory);
             assert_eq!(0x0F, cpu.registers.d);
             assert!(!cpu.registers.f.c());
             assert!(cpu.registers.f.h());
             assert!(cpu.registers.f.n());
             assert!(!cpu.registers.f.z());
-            assert_eq!(1, new_pc);
-            assert!(!prefix);
         }
     }
 
@@ -2018,9 +2006,82 @@ mod tests {
 
         let mut cpu = Cpu::new();
 
-        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        cpu.execute(&instruction, &mut memory);
         assert_eq!(0x33, cpu.registers.d);
-        assert_eq!(2, new_pc);
-        assert!(!prefix);
+    }
+
+    #[test]
+    fn test_cpu_execute_rla() {
+        {
+            let instruction = Instruction::rla();
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.a = 16;
+
+            cpu.execute(&instruction, &mut memory);
+            assert_eq!(32, cpu.registers.a);
+            assert!(!cpu.registers.f.z());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.h());
+            assert!(!cpu.registers.f.c());
+        }
+        {
+            let instruction = Instruction::rla();
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.a = 255;
+
+            cpu.execute(&instruction, &mut memory);
+            assert_eq!(254, cpu.registers.a);
+            assert!(!cpu.registers.f.z());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.h());
+            assert!(cpu.registers.f.c());
+        }
+        {
+            let instruction = Instruction::rla();
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.a = 255;
+            cpu.registers.f.set_c(true);
+
+            cpu.execute(&instruction, &mut memory);
+            assert_eq!(255, cpu.registers.a);
+            assert!(!cpu.registers.f.z());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.h());
+            assert!(cpu.registers.f.c());
+        }
+    }
+
+    #[test]
+    fn test_cpu_execute_jr() {
+        {
+            let instruction = Instruction::jr(6);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+
+            cpu.execute(&instruction, &mut memory);
+            assert_eq!(6, cpu.registers.pc);
+        }
+        {
+            let instruction = Instruction::jr(-1);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.pc = 10;
+
+            cpu.execute(&instruction, &mut memory);
+            assert_eq!(9, cpu.registers.pc);
+        }
     }
 }

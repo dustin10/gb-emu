@@ -13,7 +13,7 @@ impl Memory {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Reads a single byte to memory at the given address.
+    /// Reads a single byte from memory at the given address.
     pub fn read_byte(&self, address: u16) -> u8 {
         self.data[address as usize]
     }
@@ -25,12 +25,16 @@ impl Memory {
 
         (high as u16) << 8 | low as u16
     }
+    /// Reads a single 8 bit signed integer from memory at the given address.
+    pub fn read_i8(&self, address: u16) -> i8 {
+        self.read_byte(address) as i8
+    }
     /// Writes a single byte to memory at the given address.
     pub fn write_byte(&mut self, address: u16, byte: u8) {
         self.data[address as usize] = byte;
     }
     /// Writes a block of bytes to memory at the given start address.
-    pub fn write_block(&mut self, start_addr: u16, bytes: &[u8]) {
+    pub fn write_bytes(&mut self, start_addr: u16, bytes: &[u8]) {
         let num_bytes = bytes.len();
         let dest_start = start_addr as usize;
         let dest_end = dest_start + num_bytes;
@@ -79,6 +83,22 @@ mod tests {
     }
 
     #[test]
+    fn test_memory_read_i8() {
+        {
+            let mut memory = Memory::new();
+            memory.data[0x1010] = 1;
+            let value = memory.read_i8(0x1010);
+            assert_eq!(1, value);
+        }
+        {
+            let mut memory = Memory::new();
+            memory.data[0x1010] = 0xFF;
+            let value = memory.read_i8(0x1010);
+            assert_eq!(-1, value);
+        }
+    }
+
+    #[test]
     fn test_memory_write_byte() {
         let mut memory = Memory::new();
         memory.write_byte(0x1010, 200);
@@ -90,7 +110,7 @@ mod tests {
         let block = [200, 201, 202];
 
         let mut memory = Memory::new();
-        memory.write_block(0x1010, &block);
+        memory.write_bytes(0x1010, &block);
 
         assert_eq!(200, memory.data[0x1010]);
         assert_eq!(201, memory.data[0x1011]);
