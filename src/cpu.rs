@@ -567,6 +567,10 @@ impl Cpu {
             0x13 => Some(Instruction::inc_u16(Target::DE)),
             0x14 => Some(Instruction::inc(Target::D)),
             0x15 => Some(Instruction::dec(Target::D)),
+            0x16 => Some(Instruction::ld_u8(
+                Target8Bit::D,
+                memory.read_byte(self.registers.pc + 1),
+            )),
 
             // 0xCx
             0xCB => Some(Instruction::prefix()),
@@ -691,6 +695,7 @@ impl Cpu {
             Operation::LDU8 { target, value } => match target {
                 Target8Bit::B => self.registers.b = value,
                 Target8Bit::C => self.registers.c = value,
+                Target8Bit::D => self.registers.d = value,
                 _ => todo!(),
             },
             Operation::LDU16 { target, value } => match target {
@@ -1300,6 +1305,27 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(4, instruction.clock_ticks);
         assert_eq!(Operation::DEC { target: Target::D }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_u8_d() {
+        let op_code: u8 = 0x16;
+
+        let mut memory = Memory::new();
+        memory.write_byte(1, 20);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDU8 {
+                target: Target8Bit::D,
+                value: 20
+            },
+            instruction.operation
+        );
     }
 
     #[test]
@@ -1982,5 +2008,19 @@ mod tests {
             assert_eq!(1, new_pc);
             assert!(!prefix);
         }
+    }
+
+    #[test]
+    fn test_cpu_execute_ld_u8_d() {
+        let instruction = Instruction::ld_u8(Target8Bit::D, 0x33);
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+
+        let (new_pc, prefix) = cpu.execute(&instruction, &mut memory);
+        assert_eq!(0x33, cpu.registers.d);
+        assert_eq!(2, new_pc);
+        assert!(!prefix);
     }
 }
