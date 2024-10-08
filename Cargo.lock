@@ -131,6 +131,8 @@ dependencies = [
  "anyhow",
  "bounded-vec-deque",
  "clap",
+ "serde",
+ "serde_json",
  "tracing",
  "tracing-subscriber",
 ]

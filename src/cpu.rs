@@ -681,7 +681,7 @@ impl Cpu {
             Operation::DEC { target } => match target {
                 Target::B => {
                     let old_value = self.registers.b;
-                    self.registers.b -= 1;
+                    self.registers.b = self.registers.b.wrapping_sub(1);
 
                     self.registers.f.set_z(self.registers.b == 0);
                     self.registers.f.set_n(true);
@@ -689,7 +689,7 @@ impl Cpu {
                 }
                 Target::C => {
                     let old_value = self.registers.c;
-                    self.registers.c -= 1;
+                    self.registers.c = self.registers.c.wrapping_sub(1);
 
                     self.registers.f.set_z(self.registers.c == 0);
                     self.registers.f.set_n(true);
@@ -697,7 +697,7 @@ impl Cpu {
                 }
                 Target::D => {
                     let old_value = self.registers.d;
-                    self.registers.d -= 1;
+                    self.registers.d = self.registers.d.wrapping_sub(1);
 
                     self.registers.f.set_z(self.registers.d == 0);
                     self.registers.f.set_n(true);
@@ -705,17 +705,17 @@ impl Cpu {
                 }
                 Target::E => {
                     let old_value = self.registers.e;
-                    self.registers.e -= 1;
+                    self.registers.e = self.registers.e.wrapping_sub(1);
 
                     self.registers.f.set_z(self.registers.e == 0);
                     self.registers.f.set_n(true);
                     self.registers.f.set_h(will_half_carry_sub_u8(old_value, 1));
                 }
                 Target::BC => {
-                    self.registers.set_bc(self.registers.bc() - 1);
+                    self.registers.set_bc(self.registers.bc().wrapping_sub(1));
                 }
                 Target::DE => {
-                    self.registers.set_de(self.registers.de() - 1);
+                    self.registers.set_de(self.registers.de().wrapping_sub(1));
                 }
                 _ => panic!("invalid DEC target: {}", target),
             },
@@ -723,7 +723,7 @@ impl Cpu {
             Operation::INC { target } => match target {
                 Target::B => {
                     let old_value = self.registers.b;
-                    self.registers.b += 1;
+                    self.registers.b = self.registers.b.wrapping_add(1);
 
                     self.registers.f.set_z(self.registers.b == 0);
                     self.registers.f.set_n(false);
@@ -731,7 +731,7 @@ impl Cpu {
                 }
                 Target::C => {
                     let old_value = self.registers.c;
-                    self.registers.c += 1;
+                    self.registers.c = self.registers.c.wrapping_add(1);
 
                     self.registers.f.set_z(self.registers.c == 0);
                     self.registers.f.set_n(false);
@@ -739,7 +739,7 @@ impl Cpu {
                 }
                 Target::D => {
                     let old_value = self.registers.d;
-                    self.registers.d += 1;
+                    self.registers.d = self.registers.d.wrapping_add(1);
 
                     self.registers.f.set_z(self.registers.d == 0);
                     self.registers.f.set_n(false);
@@ -747,14 +747,14 @@ impl Cpu {
                 }
                 Target::E => {
                     let old_value = self.registers.e;
-                    self.registers.e += 1;
+                    self.registers.e = self.registers.e.wrapping_add(1);
 
                     self.registers.f.set_z(self.registers.e == 0);
                     self.registers.f.set_n(false);
                     self.registers.f.set_h(will_half_carry_add_u8(old_value, 1));
                 }
-                Target::BC => self.registers.set_bc(self.registers.bc() + 1),
-                Target::DE => self.registers.set_de(self.registers.de() + 1),
+                Target::BC => self.registers.set_bc(self.registers.bc().wrapping_add(1)),
+                Target::DE => self.registers.set_de(self.registers.de().wrapping_add(1)),
                 _ => panic!("invalid INC target: {}", target),
             },
             Operation::JR { offset } => {
@@ -2516,4 +2516,158 @@ mod tests {
             assert!(cpu.registers.f.c());
         }
     }
+}
+
+#[cfg(test)]
+mod json_tests {
+    use super::*;
+
+    use serde::Deserialize;
+    use std::path::Path;
+
+    #[derive(Debug, Deserialize)]
+    struct State {
+        pc: u16,
+        sp: u16,
+        a: u8,
+        b: u8,
+        c: u8,
+        d: u8,
+        e: u8,
+        f: u8,
+        h: u8,
+        l: u8,
+        ram: Vec<Vec<u16>>, // TODO: can probably make this better
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct Test {
+        name: String,
+        #[serde(rename = "initial")]
+        input: State,
+        #[serde(rename = "final")]
+        output: State,
+    }
+
+    fn read_json_file(path: impl AsRef<Path>) -> anyhow::Result<String> {
+        let base_dir = std::env::var("JSON_TESTS_BASE_DIR").unwrap_or(String::from("./"));
+        let base_dir = Path::new(&base_dir);
+
+        std::fs::read_to_string(base_dir.join(path)).map_err(|e| e.into())
+    }
+
+    fn deserialize_json(json: String) -> anyhow::Result<Vec<Test>> {
+        serde_json::from_str(&json).map_err(|e| e.into())
+    }
+
+    fn test_json_file(file_name: &str, op_code: u8) -> anyhow::Result<()> {
+        read_json_file(file_name)
+            .and_then(deserialize_json)?
+            .into_iter()
+            .for_each(|t| execute(op_code, t));
+
+        Ok(())
+    }
+
+    fn execute(op_code: u8, test: Test) {
+        println!("executing json test {}", test.name);
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+        cpu.registers.pc = test.input.pc;
+        cpu.registers.sp = test.input.sp;
+        cpu.registers.a = test.input.a;
+        cpu.registers.b = test.input.b;
+        cpu.registers.c = test.input.c;
+        cpu.registers.d = test.input.d;
+        cpu.registers.e = test.input.e;
+        cpu.registers.f = test.input.f.into();
+        cpu.registers.h = test.input.h;
+        cpu.registers.l = test.input.l;
+
+        for byte in test.input.ram {
+            if byte.len() != 2 {
+                panic!("invalid byte data");
+            }
+
+            let address = byte[0];
+            let value = byte[1] as u8;
+
+            memory.write_byte(address, value);
+        }
+
+        cpu.step(&mut memory);
+
+        assert_eq!(test.output.pc, cpu.registers.pc);
+        assert_eq!(test.output.sp, cpu.registers.sp);
+        assert_eq!(test.output.a, cpu.registers.a);
+        assert_eq!(test.output.b, cpu.registers.b);
+        assert_eq!(test.output.c, cpu.registers.c);
+        assert_eq!(test.output.d, cpu.registers.d);
+        assert_eq!(test.output.e, cpu.registers.e);
+        assert_eq!(test.output.f, <Flags as Into<u8>>::into(cpu.registers.f));
+        assert_eq!(test.output.h, cpu.registers.h);
+        assert_eq!(test.output.l, cpu.registers.l);
+
+        for byte in test.output.ram {
+            if byte.len() != 2 {
+                panic!("invalid byte data");
+            }
+
+            let address = byte[0];
+            let expected = byte[1] as u8;
+
+            let actual = memory.read_byte(address);
+
+            assert_eq!(expected, actual);
+        }
+    }
+
+    macro_rules! test_instruction {
+        ($name:ident, $file:expr, $op:expr) => {
+            #[test]
+            #[ignore]
+            #[allow(non_snake_case)]
+            fn $name() -> anyhow::Result<()> {
+                test_json_file($file, $op)
+            }
+        };
+    }
+
+    // 0x0x
+    test_instruction!(test_00, "00.json", 0x00);
+    test_instruction!(test_01, "01.json", 0x01);
+    test_instruction!(test_02, "02.json", 0x02);
+    test_instruction!(test_03, "03.json", 0x03);
+    test_instruction!(test_04, "04.json", 0x04);
+    test_instruction!(test_05, "05.json", 0x05);
+    test_instruction!(test_06, "06.json", 0x06);
+    //test_instruction!(test_07, "07.json", 0x07);
+    test_instruction!(test_08, "08.json", 0x08);
+    test_instruction!(test_09, "09.json", 0x09);
+    test_instruction!(test_0A, "0A.json", 0x0A);
+    test_instruction!(test_0B, "0B.json", 0x0B);
+    test_instruction!(test_0C, "0C.json", 0x0C);
+    test_instruction!(test_0D, "0D.json", 0x0D);
+    test_instruction!(test_0E, "0E.json", 0x0E);
+    test_instruction!(test_0F, "0F.json", 0x0F);
+
+    // 0x1x
+    test_instruction!(test_10, "10.json", 0x10);
+    test_instruction!(test_11, "11.json", 0x11);
+    test_instruction!(test_12, "12.json", 0x12);
+    test_instruction!(test_13, "13.json", 0x13);
+    test_instruction!(test_14, "14.json", 0x14);
+    test_instruction!(test_15, "15.json", 0x15);
+    test_instruction!(test_16, "16.json", 0x16);
+    test_instruction!(test_17, "17.json", 0x17);
+    test_instruction!(test_18, "18.json", 0x18);
+    test_instruction!(test_19, "19.json", 0x19);
+    test_instruction!(test_1A, "1A.json", 0x1A);
+    test_instruction!(test_1B, "1B.json", 0x1B);
+    test_instruction!(test_1C, "1C.json", 0x1C);
+    test_instruction!(test_1D, "1D.json", 0x1D);
+    test_instruction!(test_1E, "1E.json", 0x1E);
+    //test_instruction!(test_1F, "1F.json", 0x1F);
 }

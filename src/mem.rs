@@ -1,5 +1,5 @@
 /// Defines the maximum size of the addressable memory for the emulator.
-const ADDRESSABLE_MEMORY: usize = 0xFFFF;
+const ADDRESSABLE_MEMORY: usize = 65536;
 
 /// [`Memory`] represents the emulator memory bus
 #[derive(Debug)]
