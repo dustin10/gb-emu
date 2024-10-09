@@ -296,6 +296,12 @@ enum Operation {
     LDA {
         target: Target16Bit,
     },
+    /// Loads the value from the `A` register and stores it in the memory address corresponding to
+    /// the value in the `HL` register and then decrements the `HL` register.
+    LDADEC,
+    /// Loads the value from the `A` register and stores it in the memory address corresponding to
+    /// the value in the `HL` register and then increments the `HL` register.
+    LDAINC,
     /// Loads the value from memory at the address  `A` register and stores it in the memory address
     /// corresponding to the value of the [`Target8Bit`] register and stores it in the `A` register.
     LDAMEM {
@@ -352,6 +358,8 @@ impl Display for Operation {
                 f.write_fmt(format_args!("JR {}, {:#4x}", target, offset))
             }
             Operation::LDA { target } => f.write_fmt(format_args!("LD [{}], A", target)),
+            Operation::LDADEC => f.write_fmt(format_args!("LD [HL-], A")),
+            Operation::LDAINC => f.write_fmt(format_args!("LD [HL+], A")),
             Operation::LDAMEM { target } => f.write_fmt(format_args!("LD A, [{}]", target)),
             Operation::LDA16 { address, target } => {
                 f.write_fmt(format_args!("LD [{:#6x}] {}", address, target))
@@ -449,6 +457,16 @@ impl Instruction {
     /// the address held in the target register.
     fn ld_a(target: Target16Bit) -> Self {
         Self::new(1, 8, Operation::LDA { target })
+    }
+    /// Creates a new instruction which loads the the contents of the `A` register into memory at
+    /// the address held in the `HL` register and then decrements the value in the `HL` register.
+    fn ld_a_dec() -> Self {
+        Self::new(1, 8, Operation::LDADEC)
+    }
+    /// Creates a new instruction which loads the the contents of the `A` register into memory at
+    /// the address held in the `HL` register and then increments the value in the `HL` register.
+    fn ld_a_inc() -> Self {
+        Self::new(1, 8, Operation::LDAINC)
     }
     /// Creates a new instruction which loads the the byte from memory at the address corresponding
     /// to the value of the [`Target8Bit`] register and stores it in the `A` register.
@@ -684,6 +702,10 @@ impl Cpu {
                 Target16Bit::HL,
                 memory.read_u16(self.registers.pc + 1),
             )),
+            0x22 => Some(Instruction::ld_a_inc()),
+
+            // 0x3x
+            0x32 => Some(Instruction::ld_a_dec()),
 
             // 0xCx
             0xCB => Some(Instruction::prefix()),
@@ -826,6 +848,14 @@ impl Cpu {
                 };
 
                 memory.write_byte(address, self.registers.a);
+            }
+            Operation::LDADEC => {
+                memory.write_byte(self.registers.hl(), self.registers.a);
+                self.registers.set_hl(self.registers.hl().wrapping_sub(1));
+            }
+            Operation::LDAINC => {
+                memory.write_byte(self.registers.hl(), self.registers.a);
+                self.registers.set_hl(self.registers.hl().wrapping_add(1));
             }
             Operation::LDAMEM { target } => match target {
                 Target16Bit::BC => self.registers.a = memory.read_byte(self.registers.bc()),
@@ -1769,6 +1799,34 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_ld_a_inc() {
+        let op_code: u8 = 0x22;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::LDAINC, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_a_dec() {
+        let op_code: u8 = 0x32;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::LDADEC, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_prefix() {
         let op_code: u8 = 0xCB;
 
@@ -2689,6 +2747,36 @@ mod tests {
         assert_eq!(0xAE, cpu.registers.h);
         assert_eq!(0x24, cpu.registers.l);
     }
+
+    #[test]
+    fn test_cpu_execute_ld_a_inc() {
+        let instruction = Instruction::ld_a_inc();
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+        cpu.registers.a = 0x22;
+        cpu.registers.set_hl(0x0F0F);
+
+        cpu.execute(&instruction, &mut memory);
+        assert_eq!(0x22, memory.read_byte(0x0F0F));
+        assert_eq!(0x0F0F + 1, cpu.registers.hl());
+    }
+
+    #[test]
+    fn test_cpu_execute_ld_a_dec() {
+        let instruction = Instruction::ld_a_dec();
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+        cpu.registers.a = 0x22;
+        cpu.registers.set_hl(0x0F0F);
+
+        cpu.execute(&instruction, &mut memory);
+        assert_eq!(0x22, memory.read_byte(0x0F0F));
+        assert_eq!(0x0F0F - 1, cpu.registers.hl());
+    }
 }
 
 #[cfg(test)]
@@ -2859,4 +2947,8 @@ mod json_tests {
     // 0x2x
     test_instruction!(test_20, "20.json", 0x20);
     test_instruction!(test_21, "21.json", 0x21);
+    test_instruction!(test_22, "22.json", 0x22);
+
+    // 0x3x
+    test_instruction!(test_32, "32.json", 0x32);
 }
