@@ -27,7 +27,7 @@ impl Cartridge {
     }
     /// Creates a new [`Cartridge`] by loading a ROM file from the given file path on disk.
     pub fn from_rom(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        tracing::debug!("loading cartridge from rom file: {:?}", path.as_ref());
+        tracing::debug!("load cartridge from rom file: {:?}", path.as_ref());
 
         let name = path
             .as_ref()
@@ -36,7 +36,7 @@ impl Cartridge {
             .unwrap_or_else(|| String::from("Unknown"));
 
         let data = std::fs::read(path.as_ref())
-            .context(format!("reading file: {}", path.as_ref().to_string_lossy()))?;
+            .context(format!("read file: {}", path.as_ref().to_string_lossy()))?;
 
         Ok(Self::new(name, data))
     }
