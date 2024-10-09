@@ -571,7 +571,7 @@ impl Cpu {
     }
     /// Transforms the given op code into an [`Instruction`] which can be executed by the [`Cpu`].
     fn decode(&self, op_code: u8, memory: &Memory) -> Option<Instruction> {
-        tracing::debug!("decoding op code {:#4x}", op_code);
+        tracing::debug!("decode op code {:#4x}", op_code);
 
         match op_code {
             // 0x0x
@@ -639,13 +639,13 @@ impl Cpu {
     /// Transforms the given prefixed op code into an [`Instruction`] which can be executed by the
     /// [`Cpu`]. An op code is prefixed if the preceding op code byte was 0xCB.
     fn decode_prefixed(&self, op_code: u8) -> Option<Instruction> {
-        tracing::debug!("decoding prefixed op code {:#4x}", op_code);
+        tracing::debug!("decode prefixed op code {:#4x}", op_code);
         todo!()
     }
     /// Executes the given [`Instruction`] returning the new program counter value and whether or
     /// not the op code for the next instruction is prefixed.
     fn execute(&mut self, instruction: &Instruction, memory: &mut Memory) {
-        tracing::debug!("executing instruction '{}'", instruction);
+        tracing::debug!("execute instruction '{}'", instruction);
 
         match instruction.operation {
             // TODO: cleanup
@@ -865,7 +865,7 @@ impl Cpu {
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(will_carry);
             }
-            Operation::STOP => tracing::debug!("encountered stop instruction"),
+            Operation::STOP => tracing::debug!("ignore stop instruction"),
             _ => todo!(),
         }
     }
