@@ -157,6 +157,27 @@ impl From<Flags> for u8 {
     }
 }
 
+/// Enumeration of the flag registers available for the conditional jump relative cpu instruction.
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CondJumpTarget {
+    /// Zero flag not on.
+    NZ,
+    /// Zero flag on.
+    Z,
+    /// Carry flag not on.
+    NC,
+    /// Carry flag on.
+    C,
+}
+
+impl Display for CondJumpTarget {
+    /// Writes a string representation of the [`CondJumpTarget`] to the formatter.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:?}", self))
+    }
+}
+
 /// Enumeration of the target registers available to be manipulated by the cpu instructions.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -263,6 +284,13 @@ enum Operation {
     JR {
         offset: i8,
     },
+    /// Conditionally jumps to a relative memory address by advancing the program counter by the
+    /// offset based on the state of the [`CondJumpTarget`].
+    JRC {
+        target: CondJumpTarget,
+        jump: bool,
+        offset: i8,
+    },
     /// Loads the value from the `A` register and stores it in the memory address corresponding to
     /// the value in the [`Target16Bit`] register.
     LDA {
@@ -320,6 +348,9 @@ impl Display for Operation {
             Operation::DEC { target } => f.write_fmt(format_args!("DEC {}", target)),
             Operation::INC { target } => f.write_fmt(format_args!("INC {}", target)),
             Operation::JR { offset } => f.write_fmt(format_args!("JR {:#4x}", offset)),
+            Operation::JRC { target, offset, .. } => {
+                f.write_fmt(format_args!("JR {}, {:#4x}", target, offset))
+            }
             Operation::LDA { target } => f.write_fmt(format_args!("LD [{}], A", target)),
             Operation::LDAMEM { target } => f.write_fmt(format_args!("LD A, [{}]", target)),
             Operation::LDA16 { address, target } => {
@@ -401,6 +432,18 @@ impl Instruction {
     /// offset.
     fn jr(offset: i8) -> Self {
         Self::new(2, 12, Operation::JR { offset })
+    }
+    fn jrc(target: CondJumpTarget, jump: bool, offset: i8) -> Self {
+        let t = if jump { 12 } else { 8 };
+        Self::new(
+            2,
+            t,
+            Operation::JRC {
+                target,
+                jump,
+                offset,
+            },
+        )
     }
     /// Creates a new instruction which loads the the contents of the `A` register into memory at
     /// the address held in the target register.
@@ -631,6 +674,17 @@ impl Cpu {
             )),
             0x1F => Some(Instruction::rra()),
 
+            // 0x2x
+            0x20 => Some(Instruction::jrc(
+                CondJumpTarget::NZ,
+                !self.registers.f.z(),
+                memory.read_i8(self.registers.pc + 1),
+            )),
+            0x21 => Some(Instruction::ld_u16(
+                Target16Bit::HL,
+                memory.read_u16(self.registers.pc + 1),
+            )),
+
             // 0xCx
             0xCB => Some(Instruction::prefix()),
             _ => None,
@@ -759,6 +813,11 @@ impl Cpu {
             Operation::JR { offset } => {
                 self.registers.pc = self.registers.pc.wrapping_add_signed(offset.into());
             }
+            Operation::JRC { offset, jump, .. } => {
+                if jump {
+                    self.registers.pc = self.registers.pc.wrapping_add_signed(offset.into());
+                }
+            }
             Operation::LDA { target } => {
                 let address = match target {
                     Target16Bit::BC => self.registers.bc(),
@@ -793,6 +852,7 @@ impl Cpu {
             Operation::LDU16 { target, value } => match target {
                 Target16Bit::BC => self.registers.set_bc(value),
                 Target16Bit::DE => self.registers.set_de(value),
+                Target16Bit::HL => self.registers.set_hl(value),
                 _ => todo!(),
             },
             Operation::NOP => {}
@@ -1603,6 +1663,109 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(4, instruction.clock_ticks);
         assert_eq!(Operation::RR { target: Target::A }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_jr_nz() {
+        let op_code: u8 = 0x20;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(1, 9);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(2, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JRC {
+                    target: CondJumpTarget::NZ,
+                    jump: true,
+                    offset: 9
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(1, 9);
+
+            let mut cpu = Cpu::new();
+            cpu.registers.f.set_z(true);
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(2, instruction.num_bytes);
+            assert_eq!(8, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JRC {
+                    target: CondJumpTarget::NZ,
+                    jump: false,
+                    offset: 9
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_u16_hl() {
+        let op_code: u8 = 0x21;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x0001, 1);
+            memory.write_byte(0x0002, 0);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDU16 {
+                    target: Target16Bit::HL,
+                    value: 1
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x0001, 0);
+            memory.write_byte(0x0002, 1);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDU16 {
+                    target: Target16Bit::HL,
+                    value: 256,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_byte(0x0001, 1);
+            memory.write_byte(0x0002, 1);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDU16 {
+                    target: Target16Bit::HL,
+                    value: 257,
+                },
+                instruction.operation
+            );
+        }
     }
 
     #[test]
@@ -2513,6 +2676,19 @@ mod tests {
             assert!(cpu.registers.f.c());
         }
     }
+
+    #[test]
+    fn test_cpu_execute_ld_u16_hl() {
+        let instruction = Instruction::ld_u16(Target16Bit::HL, 0xAE24);
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+
+        cpu.execute(&instruction, &mut memory);
+        assert_eq!(0xAE, cpu.registers.h);
+        assert_eq!(0x24, cpu.registers.l);
+    }
 }
 
 #[cfg(test)]
@@ -2666,4 +2842,8 @@ mod json_tests {
     test_instruction!(test_1D, "1d.json", 0x1D);
     test_instruction!(test_1E, "1e.json", 0x1E);
     test_instruction!(test_1F, "1f.json", 0x1F);
+
+    // 0x2x
+    test_instruction!(test_20, "20.json", 0x20);
+    test_instruction!(test_21, "21.json", 0x21);
 }
