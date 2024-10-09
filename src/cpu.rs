@@ -2818,12 +2818,12 @@ mod json_tests {
     test_instruction!(test_07, "07.json", 0x07);
     test_instruction!(test_08, "08.json", 0x08);
     test_instruction!(test_09, "09.json", 0x09);
-    test_instruction!(test_0A, "0A.json", 0x0A);
-    test_instruction!(test_0B, "0B.json", 0x0B);
-    test_instruction!(test_0C, "0C.json", 0x0C);
-    test_instruction!(test_0D, "0D.json", 0x0D);
-    test_instruction!(test_0E, "0E.json", 0x0E);
-    test_instruction!(test_0F, "0F.json", 0x0F);
+    test_instruction!(test_0A, "0a.json", 0x0A);
+    test_instruction!(test_0B, "0b.json", 0x0B);
+    test_instruction!(test_0C, "0c.json", 0x0C);
+    test_instruction!(test_0D, "0d.json", 0x0D);
+    test_instruction!(test_0E, "0e.json", 0x0E);
+    test_instruction!(test_0F, "0f.json", 0x0F);
 
     // 0x1x
     test_instruction!(test_10, "10.json", 0x10);
