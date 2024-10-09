@@ -2698,6 +2698,7 @@ mod json_tests {
     use serde::Deserialize;
     use std::path::Path;
 
+    /// Contains the state of the cpu and memory at a point in the test lifecycle.
     #[derive(Debug, Deserialize)]
     struct State {
         pc: u16,
@@ -2713,6 +2714,7 @@ mod json_tests {
         ram: Vec<Vec<u16>>, // TODO: can probably make this better
     }
 
+    /// Contains the input and output data for an instruction op code test.
     #[derive(Debug, Deserialize)]
     struct Test {
         name: String,
@@ -2722,6 +2724,8 @@ mod json_tests {
         output: State,
     }
 
+    /// Reads a JSON file at the given path by joining the value of the `JSON_TESTS_BASE_DIR`
+    /// env var. If the env var is not specified then the current directory is used for the value.
     fn read_json_file(path: impl AsRef<Path>) -> anyhow::Result<String> {
         let base_dir = std::env::var("JSON_TESTS_BASE_DIR").unwrap_or(String::from("./"));
         let base_dir = Path::new(&base_dir);
@@ -2729,10 +2733,17 @@ mod json_tests {
         std::fs::read_to_string(base_dir.join(path)).map_err(|e| e.into())
     }
 
+    /// Deserializes the given JSON into a [`Vec`] of [`Test`].
     fn deserialize_json(json: String) -> anyhow::Result<Vec<Test>> {
         serde_json::from_str(&json).map_err(|e| e.into())
     }
 
+    /// Loads, deseralizes and executes all of the tests in the JSON file.
+    ///
+    /// # Panic
+    ///
+    /// This function will panic if the JSON file cannot be read or if it cannot be successfully
+    /// deserialzied into a [`Vec`] of [`Test`].
     fn test_json_file(file_name: &str, op_code: u8) {
         read_json_file(file_name)
             .and_then(deserialize_json)
@@ -2741,8 +2752,9 @@ mod json_tests {
             .for_each(|t| execute(op_code, t));
     }
 
+    /// Executes a [`Test`] for the given instruction op code.
     fn execute(op_code: u8, test: Test) {
-        println!("executing json test {}", test.name);
+        println!("execute json test {}", test.name);
 
         let mut memory = Memory::new();
 
@@ -2796,6 +2808,7 @@ mod json_tests {
         }
     }
 
+    /// Macro that allows for easily defining a test function that executes a JSON-based test file.
     macro_rules! test_instruction {
         ($name:ident, $file:expr, $op:expr) => {
             #[test]
