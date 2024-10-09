@@ -640,7 +640,6 @@ impl Cpu {
     /// [`Cpu`]. An op code is prefixed if the preceding op code byte was 0xCB.
     fn decode_prefixed(&self, op_code: u8) -> Option<Instruction> {
         tracing::debug!("decoding prefixed op code {:#4x}", op_code);
-
         todo!()
     }
     /// Executes the given [`Instruction`] returning the new program counter value and whether or
@@ -808,8 +807,7 @@ impl Cpu {
                 let carry: u8 = self.registers.f.c().into();
                 let will_carry = (*value & (1 << 7)) != 0;
 
-                *value <<= 1;
-                *value |= carry;
+                *value = (*value << 1) | carry;
 
                 self.registers.f.set_z(false);
                 self.registers.f.set_n(false);
@@ -823,10 +821,10 @@ impl Cpu {
                     _ => panic!("not implemented"),
                 };
 
-                let will_carry = (*value & (1 << 7)) != 0;
                 let truncated_bit = *value & (1 << 7);
+                let will_carry = truncated_bit != 0;
 
-                *value = (*value << 1) | truncated_bit;
+                *value = (*value << 1) | (truncated_bit >> 7);
 
                 self.registers.f.set_z(false);
                 self.registers.f.set_n(false);
@@ -843,8 +841,7 @@ impl Cpu {
                 let carry: u8 = self.registers.f.c().into();
                 let will_carry = *value & 1 != 0;
 
-                *value >>= 1;
-                *value |= carry;
+                *value = (*value >> 1) | (carry << 7);
 
                 self.registers.f.set_z(false);
                 self.registers.f.set_n(false);
@@ -858,17 +855,17 @@ impl Cpu {
                     _ => panic!("not implemented"),
                 };
 
-                let will_carry = (*value & 1) != 0;
-                let truncated_bit = (*value & 1);
+                let truncated_bit = *value & 1;
+                let will_carry = truncated_bit != 0;
 
-                *value = (*value >> 1) | (truncated_bit << 7);
+                *value = ((*value) >> 1) | (truncated_bit << 7);
 
                 self.registers.f.set_z(false);
                 self.registers.f.set_n(false);
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(will_carry);
             }
-            Operation::STOP => tracing::warn!("ignoring STOP instruction"),
+            Operation::STOP => tracing::debug!("encountered stop instruction"),
             _ => todo!(),
         }
     }
@@ -1783,7 +1780,7 @@ mod tests {
             cpu.registers.a = 255;
 
             cpu.execute(&instruction, &mut memory);
-            assert_eq!(254, cpu.registers.a);
+            assert_eq!(255, cpu.registers.a);
             assert!(!cpu.registers.f.z());
             assert!(!cpu.registers.f.n());
             assert!(!cpu.registers.f.h());
@@ -2509,7 +2506,7 @@ mod tests {
             cpu.registers.f.set_c(true);
 
             cpu.execute(&instruction, &mut memory);
-            assert_eq!(1, cpu.registers.a);
+            assert_eq!(128, cpu.registers.a);
             assert!(!cpu.registers.f.z());
             assert!(!cpu.registers.f.n());
             assert!(!cpu.registers.f.h());
@@ -2560,13 +2557,12 @@ mod json_tests {
         serde_json::from_str(&json).map_err(|e| e.into())
     }
 
-    fn test_json_file(file_name: &str, op_code: u8) -> anyhow::Result<()> {
+    fn test_json_file(file_name: &str, op_code: u8) {
         read_json_file(file_name)
-            .and_then(deserialize_json)?
+            .and_then(deserialize_json)
+            .expect("valid test JSON files")
             .into_iter()
             .for_each(|t| execute(op_code, t));
-
-        Ok(())
     }
 
     fn execute(op_code: u8, test: Test) {
@@ -2629,7 +2625,7 @@ mod json_tests {
             #[test]
             #[ignore]
             #[allow(non_snake_case)]
-            fn $name() -> anyhow::Result<()> {
+            fn $name() {
                 test_json_file($file, $op)
             }
         };
@@ -2643,7 +2639,7 @@ mod json_tests {
     test_instruction!(test_04, "04.json", 0x04);
     test_instruction!(test_05, "05.json", 0x05);
     test_instruction!(test_06, "06.json", 0x06);
-    //test_instruction!(test_07, "07.json", 0x07);
+    test_instruction!(test_07, "07.json", 0x07);
     test_instruction!(test_08, "08.json", 0x08);
     test_instruction!(test_09, "09.json", 0x09);
     test_instruction!(test_0A, "0A.json", 0x0A);
@@ -2664,10 +2660,10 @@ mod json_tests {
     test_instruction!(test_17, "17.json", 0x17);
     test_instruction!(test_18, "18.json", 0x18);
     test_instruction!(test_19, "19.json", 0x19);
-    test_instruction!(test_1A, "1A.json", 0x1A);
-    test_instruction!(test_1B, "1B.json", 0x1B);
-    test_instruction!(test_1C, "1C.json", 0x1C);
-    test_instruction!(test_1D, "1D.json", 0x1D);
-    test_instruction!(test_1E, "1E.json", 0x1E);
-    //test_instruction!(test_1F, "1F.json", 0x1F);
+    test_instruction!(test_1A, "1a.json", 0x1A);
+    test_instruction!(test_1B, "1b.json", 0x1B);
+    test_instruction!(test_1C, "1c.json", 0x1C);
+    test_instruction!(test_1D, "1d.json", 0x1D);
+    test_instruction!(test_1E, "1e.json", 0x1E);
+    test_instruction!(test_1F, "1f.json", 0x1F);
 }
