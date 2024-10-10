@@ -703,6 +703,13 @@ impl Cpu {
                 memory.read_u16(self.registers.pc + 1),
             )),
             0x22 => Some(Instruction::ld_a_inc()),
+            0x23 => Some(Instruction::inc_u16(Target::HL)),
+            0x24 => Some(Instruction::inc(Target::H)),
+            0x25 => Some(Instruction::dec(Target::H)),
+            0x26 => Some(Instruction::ld_u8(
+                Target8Bit::H,
+                memory.read_byte(self.registers.pc + 1),
+            )),
 
             // 0x3x
             0x32 => Some(Instruction::ld_a_dec()),
@@ -786,6 +793,14 @@ impl Cpu {
                     self.registers.f.set_n(true);
                     self.registers.f.set_h(will_half_carry_sub_u8(old_value, 1));
                 }
+                Target::H => {
+                    let old_value = self.registers.h;
+                    self.registers.h = self.registers.h.wrapping_sub(1);
+
+                    self.registers.f.set_z(self.registers.h == 0);
+                    self.registers.f.set_n(true);
+                    self.registers.f.set_h(will_half_carry_sub_u8(old_value, 1));
+                }
                 Target::BC => {
                     self.registers.set_bc(self.registers.bc().wrapping_sub(1));
                 }
@@ -828,8 +843,17 @@ impl Cpu {
                     self.registers.f.set_n(false);
                     self.registers.f.set_h(will_half_carry_add_u8(old_value, 1));
                 }
+                Target::H => {
+                    let old_value = self.registers.h;
+                    self.registers.h = self.registers.h.wrapping_add(1);
+
+                    self.registers.f.set_z(self.registers.h == 0);
+                    self.registers.f.set_n(false);
+                    self.registers.f.set_h(will_half_carry_add_u8(old_value, 1));
+                }
                 Target::BC => self.registers.set_bc(self.registers.bc().wrapping_add(1)),
                 Target::DE => self.registers.set_de(self.registers.de().wrapping_add(1)),
+                Target::HL => self.registers.set_hl(self.registers.hl().wrapping_add(1)),
                 _ => panic!("invalid INC target: {}", target),
             },
             Operation::JR { offset } => {
@@ -877,6 +901,7 @@ impl Cpu {
                 Target8Bit::C => self.registers.c = value,
                 Target8Bit::D => self.registers.d = value,
                 Target8Bit::E => self.registers.e = value,
+                Target8Bit::H => self.registers.h = value,
                 _ => todo!(),
             },
             Operation::LDU16 { target, value } => match target {
@@ -1810,6 +1835,69 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(8, instruction.clock_ticks);
         assert_eq!(Operation::LDAINC, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_inc_hl() {
+        let op_code: u8 = 0x23;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::INC { target: Target::HL }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_inc_h() {
+        let op_code: u8 = 0x24;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::INC { target: Target::H }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_dec_h() {
+        let op_code: u8 = 0x25;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::DEC { target: Target::H }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_u8_h() {
+        let op_code: u8 = 0x26;
+
+        let mut memory = Memory::new();
+        memory.write_byte(1, 20);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDU8 {
+                target: Target8Bit::H,
+                value: 20
+            },
+            instruction.operation
+        );
     }
 
     #[test]
@@ -2777,6 +2865,114 @@ mod tests {
         assert_eq!(0x22, memory.read_byte(0x0F0F));
         assert_eq!(0x0F0F - 1, cpu.registers.hl());
     }
+
+    #[test]
+    fn test_cpu_execute_inc_hl() {
+        let instruction = Instruction::inc_u16(Target::HL);
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+        cpu.registers.set_hl(200);
+
+        cpu.execute(&instruction, &mut memory);
+        assert_eq!(201, cpu.registers.hl());
+    }
+
+    #[test]
+    fn test_cpu_execute_inc_h() {
+        {
+            let instruction = Instruction::inc(Target::H);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.h = 1;
+
+            cpu.execute(&instruction, &mut memory);
+            assert_eq!(2, cpu.registers.h);
+            assert!(!cpu.registers.f.c());
+            assert!(!cpu.registers.f.h());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.z());
+        }
+        {
+            let instruction = Instruction::inc(Target::H);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.h = 0x0F;
+
+            cpu.execute(&instruction, &mut memory);
+            assert_eq!(0x10, cpu.registers.h);
+            assert!(!cpu.registers.f.c());
+            assert!(cpu.registers.f.h());
+            assert!(!cpu.registers.f.n());
+            assert!(!cpu.registers.f.z());
+        }
+    }
+
+    #[test]
+    fn test_cpu_execute_dec_h() {
+        {
+            let instruction = Instruction::dec(Target::H);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.h = 2;
+
+            cpu.execute(&instruction, &mut memory);
+            assert_eq!(1, cpu.registers.h);
+            assert!(!cpu.registers.f.c());
+            assert!(!cpu.registers.f.h());
+            assert!(cpu.registers.f.n());
+            assert!(!cpu.registers.f.z());
+        }
+        {
+            let instruction = Instruction::dec(Target::H);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.h = 1;
+
+            cpu.execute(&instruction, &mut memory);
+            assert_eq!(0, cpu.registers.h);
+            assert!(!cpu.registers.f.c());
+            assert!(!cpu.registers.f.h());
+            assert!(cpu.registers.f.n());
+            assert!(cpu.registers.f.z());
+        }
+        {
+            let instruction = Instruction::dec(Target::H);
+
+            let mut memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.h = 0x10;
+
+            cpu.execute(&instruction, &mut memory);
+            assert_eq!(0x0F, cpu.registers.h);
+            assert!(!cpu.registers.f.c());
+            assert!(cpu.registers.f.h());
+            assert!(cpu.registers.f.n());
+            assert!(!cpu.registers.f.z());
+        }
+    }
+
+    #[test]
+    fn test_cpu_execute_ld_u8_h() {
+        let instruction = Instruction::ld_u8(Target8Bit::H, 0x33);
+
+        let mut memory = Memory::new();
+
+        let mut cpu = Cpu::new();
+
+        cpu.execute(&instruction, &mut memory);
+        assert_eq!(0x33, cpu.registers.h);
+    }
 }
 
 #[cfg(test)]
@@ -2948,6 +3144,10 @@ mod json_tests {
     test_instruction!(test_20, "20.json", 0x20);
     test_instruction!(test_21, "21.json", 0x21);
     test_instruction!(test_22, "22.json", 0x22);
+    test_instruction!(test_23, "23.json", 0x23);
+    test_instruction!(test_24, "24.json", 0x24);
+    test_instruction!(test_25, "25.json", 0x25);
+    test_instruction!(test_26, "26.json", 0x26);
 
     // 0x3x
     test_instruction!(test_32, "32.json", 0x32);
