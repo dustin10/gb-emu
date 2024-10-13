@@ -14,27 +14,27 @@ impl Memory {
         Self::default()
     }
     /// Reads a single byte from memory at the given address.
-    pub fn read_byte(&self, address: u16) -> u8 {
+    pub fn read_u8(&self, address: u16) -> u8 {
         self.data[address as usize]
     }
     /// Reads the next two bytes from the given address in memory and combines them into a single
     /// u16 value.
     pub fn read_u16(&self, address: u16) -> u16 {
-        let low = self.read_byte(address);
-        let high = self.read_byte(address + 1);
+        let low = self.read_u8(address);
+        let high = self.read_u8(address + 1);
 
         (high as u16) << 8 | low as u16
     }
     /// Reads a single 8 bit signed integer from memory at the given address.
     pub fn read_i8(&self, address: u16) -> i8 {
-        self.read_byte(address) as i8
+        self.read_u8(address) as i8
     }
     /// Writes a single byte to memory at the given address.
-    pub fn write_byte(&mut self, address: u16, byte: u8) {
+    pub fn write_u8(&mut self, address: u16, byte: u8) {
         self.data[address as usize] = byte;
     }
     /// Writes a block of bytes to memory at the given start address.
-    pub fn write_bytes(&mut self, start_addr: u16, bytes: &[u8]) {
+    pub fn write_block(&mut self, start_addr: u16, bytes: &[u8]) {
         let num_bytes = bytes.len();
         let dest_start = start_addr as usize;
         let dest_end = dest_start + num_bytes;
@@ -66,10 +66,10 @@ mod tests {
     }
 
     #[test]
-    fn test_memory_read_byte() {
+    fn test_memory_read_u8() {
         let mut memory = Memory::new();
         memory.data[0x1010] = 200;
-        let byte = memory.read_byte(0x1010);
+        let byte = memory.read_u8(0x1010);
         assert_eq!(200, byte);
     }
 
@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn test_memory_write_byte() {
         let mut memory = Memory::new();
-        memory.write_byte(0x1010, 200);
+        memory.write_u8(0x1010, 200);
         assert_eq!(200, memory.data[0x1010]);
     }
 
@@ -110,7 +110,7 @@ mod tests {
         let block = [200, 201, 202];
 
         let mut memory = Memory::new();
-        memory.write_bytes(0x1010, &block);
+        memory.write_block(0x1010, &block);
 
         assert_eq!(200, memory.data[0x1010]);
         assert_eq!(201, memory.data[0x1011]);

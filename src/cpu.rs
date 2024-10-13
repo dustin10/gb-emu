@@ -615,7 +615,7 @@ impl Cpu {
     }
     /// Reads and executes the next instruction based on the current program counter.
     pub fn step(&mut self, memory: &mut Memory) {
-        let op_code = memory.read_byte(self.registers.pc);
+        let op_code = memory.read_u8(self.registers.pc);
 
         let instruction = match self.instruction_set {
             InstructionSet::Standard => self.decode(op_code, memory),
@@ -655,7 +655,7 @@ impl Cpu {
             0x05 => Some(Instruction::dec(Target::B)),
             0x06 => Some(Instruction::ld_u8(
                 Target8Bit::B,
-                memory.read_byte(self.registers.pc + 1),
+                memory.read_u8(self.registers.pc + 1),
             )),
             0x07 => Some(Instruction::rlca()),
             0x08 => Some(Instruction::ld_a16(
@@ -669,7 +669,7 @@ impl Cpu {
             0x0D => Some(Instruction::dec(Target::C)),
             0x0E => Some(Instruction::ld_u8(
                 Target8Bit::C,
-                memory.read_byte(self.registers.pc + 1),
+                memory.read_u8(self.registers.pc + 1),
             )),
             0x0F => Some(Instruction::rrca()),
 
@@ -685,7 +685,7 @@ impl Cpu {
             0x15 => Some(Instruction::dec(Target::D)),
             0x16 => Some(Instruction::ld_u8(
                 Target8Bit::D,
-                memory.read_byte(self.registers.pc + 1),
+                memory.read_u8(self.registers.pc + 1),
             )),
             0x17 => Some(Instruction::rla()),
             0x18 => Some(Instruction::jr(memory.read_i8(self.registers.pc + 1))),
@@ -696,7 +696,7 @@ impl Cpu {
             0x1D => Some(Instruction::dec(Target::E)),
             0x1E => Some(Instruction::ld_u8(
                 Target8Bit::E,
-                memory.read_byte(self.registers.pc + 1),
+                memory.read_u8(self.registers.pc + 1),
             )),
             0x1F => Some(Instruction::rra()),
 
@@ -716,7 +716,7 @@ impl Cpu {
             0x25 => Some(Instruction::dec(Target::H)),
             0x26 => Some(Instruction::ld_u8(
                 Target8Bit::H,
-                memory.read_byte(self.registers.pc + 1),
+                memory.read_u8(self.registers.pc + 1),
             )),
             0x27 => Some(Instruction::daa()),
             0x28 => Some(Instruction::jrc(
@@ -925,19 +925,19 @@ impl Cpu {
                     _ => todo!(),
                 };
 
-                memory.write_byte(address, self.registers.a);
+                memory.write_u8(address, self.registers.a);
             }
             Operation::LDADEC => {
-                memory.write_byte(self.registers.hl(), self.registers.a);
+                memory.write_u8(self.registers.hl(), self.registers.a);
                 self.registers.set_hl(self.registers.hl().wrapping_sub(1));
             }
             Operation::LDAINC => {
-                memory.write_byte(self.registers.hl(), self.registers.a);
+                memory.write_u8(self.registers.hl(), self.registers.a);
                 self.registers.set_hl(self.registers.hl().wrapping_add(1));
             }
             Operation::LDAMEM { target } => match target {
-                Target16Bit::BC => self.registers.a = memory.read_byte(self.registers.bc()),
-                Target16Bit::DE => self.registers.a = memory.read_byte(self.registers.de()),
+                Target16Bit::BC => self.registers.a = memory.read_u8(self.registers.bc()),
+                Target16Bit::DE => self.registers.a = memory.read_u8(self.registers.de()),
                 _ => todo!(),
             },
             Operation::LDA16 { address, target } => match target {
@@ -945,8 +945,8 @@ impl Cpu {
                     let low = self.registers.sp as u8;
                     let high = (self.registers.sp >> 8) as u8;
 
-                    memory.write_byte(address, low);
-                    memory.write_byte(address + 1, high);
+                    memory.write_u8(address, low);
+                    memory.write_u8(address + 1, high);
                 }
                 _ => todo!(),
             },
@@ -1140,8 +1140,8 @@ mod tests {
 
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x0001, 1);
-            memory.write_byte(0x0002, 0);
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
 
             let cpu = Cpu::new();
 
@@ -1158,8 +1158,8 @@ mod tests {
         }
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x0001, 0);
-            memory.write_byte(0x0002, 1);
+            memory.write_u8(0x0001, 0);
+            memory.write_u8(0x0002, 1);
 
             let cpu = Cpu::new();
 
@@ -1176,8 +1176,8 @@ mod tests {
         }
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x0001, 1);
-            memory.write_byte(0x0002, 1);
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 1);
 
             let cpu = Cpu::new();
 
@@ -1260,7 +1260,7 @@ mod tests {
         let op_code: u8 = 0x06;
 
         let mut memory = Memory::new();
-        memory.write_byte(0x0001, 3);
+        memory.write_u8(0x0001, 3);
 
         let cpu = Cpu::new();
 
@@ -1296,8 +1296,8 @@ mod tests {
 
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x0001, 1);
-            memory.write_byte(0x0002, 0);
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
 
             let cpu = Cpu::new();
 
@@ -1314,8 +1314,8 @@ mod tests {
         }
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x0001, 0);
-            memory.write_byte(0x0002, 1);
+            memory.write_u8(0x0001, 0);
+            memory.write_u8(0x0002, 1);
 
             let cpu = Cpu::new();
 
@@ -1332,8 +1332,8 @@ mod tests {
         }
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x0001, 1);
-            memory.write_byte(0x0002, 1);
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 1);
 
             let cpu = Cpu::new();
 
@@ -1433,7 +1433,7 @@ mod tests {
         let op_code: u8 = 0x0E;
 
         let mut memory = Memory::new();
-        memory.write_byte(1, 20);
+        memory.write_u8(1, 20);
 
         let cpu = Cpu::new();
 
@@ -1483,8 +1483,8 @@ mod tests {
 
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x0001, 1);
-            memory.write_byte(0x0002, 0);
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
 
             let cpu = Cpu::new();
 
@@ -1501,8 +1501,8 @@ mod tests {
         }
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x0001, 0);
-            memory.write_byte(0x0002, 1);
+            memory.write_u8(0x0001, 0);
+            memory.write_u8(0x0002, 1);
 
             let cpu = Cpu::new();
 
@@ -1519,8 +1519,8 @@ mod tests {
         }
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x0001, 1);
-            memory.write_byte(0x0002, 1);
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 1);
 
             let cpu = Cpu::new();
 
@@ -1603,7 +1603,7 @@ mod tests {
         let op_code: u8 = 0x16;
 
         let mut memory = Memory::new();
-        memory.write_byte(1, 20);
+        memory.write_u8(1, 20);
 
         let cpu = Cpu::new();
 
@@ -1639,7 +1639,7 @@ mod tests {
 
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x01, 2);
+            memory.write_u8(0x01, 2);
 
             let cpu = Cpu::new();
 
@@ -1650,7 +1650,7 @@ mod tests {
         }
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x01, 0xFF);
+            memory.write_u8(0x01, 0xFF);
 
             let cpu = Cpu::new();
 
@@ -1744,7 +1744,7 @@ mod tests {
         let op_code: u8 = 0x1E;
 
         let mut memory = Memory::new();
-        memory.write_byte(1, 20);
+        memory.write_u8(1, 20);
 
         let cpu = Cpu::new();
 
@@ -1780,7 +1780,7 @@ mod tests {
 
         {
             let mut memory = Memory::new();
-            memory.write_byte(1, 9);
+            memory.write_u8(1, 9);
 
             let cpu = Cpu::new();
 
@@ -1798,7 +1798,7 @@ mod tests {
         }
         {
             let mut memory = Memory::new();
-            memory.write_byte(1, 9);
+            memory.write_u8(1, 9);
 
             let mut cpu = Cpu::new();
             cpu.registers.f.set_z(true);
@@ -1823,8 +1823,8 @@ mod tests {
 
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x0001, 1);
-            memory.write_byte(0x0002, 0);
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
 
             let cpu = Cpu::new();
 
@@ -1841,8 +1841,8 @@ mod tests {
         }
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x0001, 0);
-            memory.write_byte(0x0002, 1);
+            memory.write_u8(0x0001, 0);
+            memory.write_u8(0x0002, 1);
 
             let cpu = Cpu::new();
 
@@ -1859,8 +1859,8 @@ mod tests {
         }
         {
             let mut memory = Memory::new();
-            memory.write_byte(0x0001, 1);
-            memory.write_byte(0x0002, 1);
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 1);
 
             let cpu = Cpu::new();
 
@@ -1938,7 +1938,7 @@ mod tests {
         let op_code: u8 = 0x26;
 
         let mut memory = Memory::new();
-        memory.write_byte(1, 20);
+        memory.write_u8(1, 20);
 
         let cpu = Cpu::new();
 
@@ -1974,7 +1974,7 @@ mod tests {
 
         {
             let mut memory = Memory::new();
-            memory.write_byte(1, 9);
+            memory.write_u8(1, 9);
 
             let cpu = Cpu::new();
 
@@ -1992,7 +1992,7 @@ mod tests {
         }
         {
             let mut memory = Memory::new();
-            memory.write_byte(1, 9);
+            memory.write_u8(1, 9);
 
             let mut cpu = Cpu::new();
             cpu.registers.f.set_z(true);
@@ -2143,7 +2143,7 @@ mod json_tests {
             let address = byte[0];
             let value = byte[1] as u8;
 
-            memory.write_byte(address, value);
+            memory.write_u8(address, value);
         }
 
         cpu.step(&mut memory);
@@ -2167,7 +2167,7 @@ mod json_tests {
             let address = byte[0];
             let expected = byte[1] as u8;
 
-            let actual = memory.read_byte(address);
+            let actual = memory.read_u8(address);
 
             assert_eq!(expected, actual);
         }
