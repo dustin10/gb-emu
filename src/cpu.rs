@@ -280,10 +280,14 @@ enum Operation {
     DEC {
         target: Target,
     },
+    /// Decrements the value at the memory address specified by value of the `HL` register by 1.
+    DECMEM,
     /// Increments the value in the [`Target`] register by one.
     INC {
         target: Target,
     },
+    /// Increments the value at the memory address specified by value of the `HL` register by 1.
+    INCMEM,
     /// Jumps to a relative memory address by advancing the program counter by the offset.
     JR {
         offset: i8,
@@ -366,7 +370,9 @@ impl Display for Operation {
             Operation::CPL => f.write_str("CPL"),
             Operation::DAA => f.write_str("DAA"),
             Operation::DEC { target } => f.write_fmt(format_args!("DEC {}", target)),
+            Operation::DECMEM => f.write_str("DEC [HL]"),
             Operation::INC { target } => f.write_fmt(format_args!("INC {}", target)),
+            Operation::INCMEM => f.write_str("INC [HL]"),
             Operation::JR { offset } => f.write_fmt(format_args!("JR {:#4x}", offset)),
             Operation::JRC { target, offset, .. } => {
                 f.write_fmt(format_args!("JR {}, {:#4x}", target, offset))
@@ -450,6 +456,11 @@ impl Instruction {
     fn dec(target: Target) -> Self {
         Self::new(1, 4, Operation::DEC { target })
     }
+    /// Creates a new instruction which decrements the value at the memory address specified by
+    /// value of the `HL` register by 1.
+    fn dec_mem() -> Self {
+        Self::new(1, 12, Operation::DECMEM)
+    }
     /// Creates a new decrement instruction that targets a combined 16 bit register.
     fn dec_u16(target: Target) -> Self {
         Self::new(1, 8, Operation::DEC { target })
@@ -457,6 +468,11 @@ impl Instruction {
     /// Creates a new increment instruction that targets an single 8 bit register.
     fn inc(target: Target) -> Self {
         Self::new(1, 4, Operation::INC { target })
+    }
+    /// Creates a new instruction which increments the value at the memory address specified by
+    /// value of the `HL` register by 1.
+    fn inc_mem() -> Self {
+        Self::new(1, 12, Operation::INCMEM)
     }
     /// Creates a new increment instruction that targets a combined 16 bit register.
     fn inc_u16(target: Target) -> Self {
@@ -677,7 +693,7 @@ impl Cpu {
             0x00 => Some(Instruction::nop()),
             0x01 => Some(Instruction::ld_u16(
                 Target16Bit::BC,
-                memory.read_u16(self.registers.pc + 1),
+                memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
             0x02 => Some(Instruction::ld_a(Target16Bit::BC)),
             0x03 => Some(Instruction::inc_u16(Target::BC)),
@@ -685,11 +701,11 @@ impl Cpu {
             0x05 => Some(Instruction::dec(Target::B)),
             0x06 => Some(Instruction::ld_u8(
                 Target8Bit::B,
-                memory.read_u8(self.registers.pc + 1),
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
             )),
             0x07 => Some(Instruction::rlca()),
             0x08 => Some(Instruction::ld_a16(
-                memory.read_u16(self.registers.pc + 1),
+                memory.read_u16(self.registers.pc.wrapping_add(1)),
                 Target16Bit::SP,
             )),
             0x09 => Some(Instruction::add_hl(Target::BC)),
@@ -699,7 +715,7 @@ impl Cpu {
             0x0D => Some(Instruction::dec(Target::C)),
             0x0E => Some(Instruction::ld_u8(
                 Target8Bit::C,
-                memory.read_u8(self.registers.pc + 1),
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
             )),
             0x0F => Some(Instruction::rrca()),
 
@@ -707,7 +723,7 @@ impl Cpu {
             0x10 => Some(Instruction::stop()),
             0x11 => Some(Instruction::ld_u16(
                 Target16Bit::DE,
-                memory.read_u16(self.registers.pc + 1),
+                memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
             0x12 => Some(Instruction::ld_a(Target16Bit::DE)),
             0x13 => Some(Instruction::inc_u16(Target::DE)),
@@ -715,10 +731,12 @@ impl Cpu {
             0x15 => Some(Instruction::dec(Target::D)),
             0x16 => Some(Instruction::ld_u8(
                 Target8Bit::D,
-                memory.read_u8(self.registers.pc + 1),
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
             )),
             0x17 => Some(Instruction::rla()),
-            0x18 => Some(Instruction::jr(memory.read_i8(self.registers.pc + 1))),
+            0x18 => Some(Instruction::jr(
+                memory.read_i8(self.registers.pc.wrapping_add(1)),
+            )),
             0x19 => Some(Instruction::add_hl(Target::DE)),
             0x1A => Some(Instruction::ld_a_mem(Target16Bit::DE)),
             0x1B => Some(Instruction::dec_u16(Target::DE)),
@@ -726,7 +744,7 @@ impl Cpu {
             0x1D => Some(Instruction::dec(Target::E)),
             0x1E => Some(Instruction::ld_u8(
                 Target8Bit::E,
-                memory.read_u8(self.registers.pc + 1),
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
             )),
             0x1F => Some(Instruction::rra()),
 
@@ -734,11 +752,11 @@ impl Cpu {
             0x20 => Some(Instruction::jrc(
                 CondJumpTarget::NZ,
                 !self.registers.f.z(),
-                memory.read_i8(self.registers.pc + 1),
+                memory.read_i8(self.registers.pc.wrapping_add(1)),
             )),
             0x21 => Some(Instruction::ld_u16(
                 Target16Bit::HL,
-                memory.read_u16(self.registers.pc + 1),
+                memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
             0x22 => Some(Instruction::ld_a_inc()),
             0x23 => Some(Instruction::inc_u16(Target::HL)),
@@ -746,13 +764,13 @@ impl Cpu {
             0x25 => Some(Instruction::dec(Target::H)),
             0x26 => Some(Instruction::ld_u8(
                 Target8Bit::H,
-                memory.read_u8(self.registers.pc + 1),
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
             )),
             0x27 => Some(Instruction::daa()),
             0x28 => Some(Instruction::jrc(
                 CondJumpTarget::Z,
                 self.registers.f.z(),
-                memory.read_i8(self.registers.pc + 1),
+                memory.read_i8(self.registers.pc.wrapping_add(1)),
             )),
             0x29 => Some(Instruction::add_hl(Target::HL)),
             0x2A => Some(Instruction::ld_a_mem_inc()),
@@ -761,12 +779,24 @@ impl Cpu {
             0x2D => Some(Instruction::dec(Target::L)),
             0x2E => Some(Instruction::ld_u8(
                 Target8Bit::L,
-                memory.read_u8(self.registers.pc + 1),
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
             )),
             0x2F => Some(Instruction::cpl()),
 
             // 0x3x
+            0x30 => Some(Instruction::jrc(
+                CondJumpTarget::NC,
+                !self.registers.f.c(),
+                memory.read_i8(self.registers.pc.wrapping_add(1)),
+            )),
+            0x31 => Some(Instruction::ld_u16(
+                Target16Bit::SP,
+                memory.read_u16(self.registers.pc.wrapping_add(1)),
+            )),
             0x32 => Some(Instruction::ld_a_dec()),
+            0x33 => Some(Instruction::inc_u16(Target::SP)),
+            0x34 => Some(Instruction::inc_mem()),
+            0x35 => Some(Instruction::dec_mem()),
             0x3A => Some(Instruction::ld_a_mem_dec()),
 
             // 0xCx
@@ -920,6 +950,17 @@ impl Cpu {
                 }
                 _ => panic!("invalid DEC target: {}", target),
             },
+            Operation::DECMEM => {
+                let address = self.registers.hl();
+                let value = memory.read_u8(address);
+                let new_value = value.wrapping_sub(1);
+
+                memory.write_u8(address, new_value);
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(true);
+                self.registers.f.set_h(will_half_carry_sub_u8(value, 1))
+            }
             // TODO: cleanup
             Operation::INC { target } => match target {
                 Target::B => {
@@ -973,8 +1014,20 @@ impl Cpu {
                 Target::BC => self.registers.set_bc(self.registers.bc().wrapping_add(1)),
                 Target::DE => self.registers.set_de(self.registers.de().wrapping_add(1)),
                 Target::HL => self.registers.set_hl(self.registers.hl().wrapping_add(1)),
+                Target::SP => self.registers.sp = self.registers.sp.wrapping_add(1),
                 _ => panic!("invalid INC target: {}", target),
             },
+            Operation::INCMEM => {
+                let address = self.registers.hl();
+                let value = memory.read_u8(address);
+                let new_value = value.wrapping_add(1);
+
+                memory.write_u8(address, new_value);
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(will_half_carry_add_u8(value, 1))
+            }
             Operation::JR { offset } => {
                 self.registers.pc = self.registers.pc.wrapping_add_signed(offset.into());
             }
@@ -1036,6 +1089,7 @@ impl Cpu {
                 Target16Bit::BC => self.registers.set_bc(value),
                 Target16Bit::DE => self.registers.set_de(value),
                 Target16Bit::HL => self.registers.set_hl(value),
+                Target16Bit::SP => self.registers.sp = value,
                 _ => todo!(),
             },
             Operation::NOP => {}
@@ -2194,6 +2248,109 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_jr_nc() {
+        let op_code: u8 = 0x30;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(1, 9);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(2, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JRC {
+                    target: CondJumpTarget::NC,
+                    jump: true,
+                    offset: 9
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(1, 9);
+
+            let mut cpu = Cpu::new();
+            cpu.registers.f.set_c(true);
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(2, instruction.num_bytes);
+            assert_eq!(8, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JRC {
+                    target: CondJumpTarget::NC,
+                    jump: false,
+                    offset: 9
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_u16_sp() {
+        let op_code: u8 = 0x31;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDU16 {
+                    target: Target16Bit::SP,
+                    value: 1
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(0x0001, 0);
+            memory.write_u8(0x0002, 1);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDU16 {
+                    target: Target16Bit::SP,
+                    value: 256,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 1);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::LDU16 {
+                    target: Target16Bit::SP,
+                    value: 257,
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
     fn test_cpu_decode_ld_a_dec() {
         let op_code: u8 = 0x32;
 
@@ -2205,6 +2362,48 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(8, instruction.clock_ticks);
         assert_eq!(Operation::LDADEC, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_inc_sp() {
+        let op_code: u8 = 0x33;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::INC { target: Target::SP }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_inc_mem() {
+        let op_code: u8 = 0x34;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(12, instruction.clock_ticks);
+        assert_eq!(Operation::INCMEM, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_dec_mem() {
+        let op_code: u8 = 0x35;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(12, instruction.clock_ticks);
+        assert_eq!(Operation::DECMEM, instruction.operation);
     }
 
     #[test]
@@ -2420,6 +2619,11 @@ mod json_tests {
     test_instruction!(test_2F, "2f.json", 0x2F);
 
     // 0x3x
+    test_instruction!(test_30, "30.json", 0x30);
+    test_instruction!(test_31, "31.json", 0x31);
     test_instruction!(test_32, "32.json", 0x32);
+    test_instruction!(test_33, "33.json", 0x33);
+    test_instruction!(test_34, "34.json", 0x34);
+    test_instruction!(test_35, "35.json", 0x35);
     test_instruction!(test_3A, "3a.json", 0x3A);
 }
