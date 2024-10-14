@@ -338,6 +338,11 @@ enum Operation {
         target: Target8Bit,
         value: u8,
     },
+    /// Loads an immediate u8 and then writes it to the memory address pointed to by the value
+    /// in the `HL` register.
+    LDU8MEM {
+        value: u8,
+    },
     /// No operation.
     NOP,
     /// Prefix op code which causes the subsequent byte to represent a different set of
@@ -359,6 +364,8 @@ enum Operation {
     RRC {
         target: Target,
     },
+    /// Sets the carry flag.
+    SCF,
     STOP,
 }
 
@@ -392,6 +399,7 @@ impl Display for Operation {
             Operation::LDU8 { target, value } => {
                 f.write_fmt(format_args!("LD {}, {:#4x}", target, value))
             }
+            Operation::LDU8MEM { value } => f.write_fmt(format_args!("LD [HL], {:#4x}", value)),
             Operation::NOP => f.write_str("NOP"),
             Operation::PREFIX => f.write_str("PREFIX"),
             Operation::RL { target } => match target {
@@ -410,6 +418,7 @@ impl Display for Operation {
                 Target::A => f.write_str("RRCA"),
                 _ => f.write_fmt(format_args!("RRC {}", target)),
             },
+            Operation::SCF => f.write_str("SCF"),
             Operation::STOP => f.write_str("STOP"),
         }
     }
@@ -532,12 +541,17 @@ impl Instruction {
     fn ld_a16(address: u16, target: Target16Bit) -> Self {
         Self::new(3, 20, Operation::LDA16 { address, target })
     }
-    /// Creates a new load immediate n8 instruction with the given target 8 bit register and
+    /// Creates a new load immediate u8 instruction with the given target 8 bit register and
     /// value to load.
     fn ld_u8(target: Target8Bit, value: u8) -> Self {
         Self::new(2, 8, Operation::LDU8 { target, value })
     }
-    /// Creates a new load immediate n16 instruction with the given target 16 bit register and
+    /// Creates a new load immediate u8 instruction which writes the u8 value to the memory address
+    /// pointed to by the value in the `HL` register.
+    fn ld_u8_mem(value: u8) -> Self {
+        Self::new(2, 12, Operation::LDU8MEM { value })
+    }
+    /// Creates a new load immediate u16 instruction with the given target 16 bit register and
     /// value to load.
     fn ld_u16(target: Target16Bit, value: u16) -> Self {
         Self::new(3, 12, Operation::LDU16 { target, value })
@@ -589,6 +603,10 @@ impl Instruction {
     /// through the carry flag.
     fn rrca() -> Self {
         Self::rrc(Target::A)
+    }
+    /// Creates a new stop instruction that sets the carry flag.
+    fn scf() -> Self {
+        Self::new(1, 4, Operation::SCF)
     }
     /// Creates a new stop instruction that is akin to [`Operation::NOP`] for the emulator.
     fn stop() -> Self {
@@ -797,6 +815,15 @@ impl Cpu {
             0x33 => Some(Instruction::inc_u16(Target::SP)),
             0x34 => Some(Instruction::inc_mem()),
             0x35 => Some(Instruction::dec_mem()),
+            0x36 => Some(Instruction::ld_u8_mem(
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
+            )),
+            0x37 => Some(Instruction::scf()),
+            0x38 => Some(Instruction::jrc(
+                CondJumpTarget::C,
+                self.registers.f.c(),
+                memory.read_i8(self.registers.pc.wrapping_add(1)),
+            )),
             0x3A => Some(Instruction::ld_a_mem_dec()),
 
             // 0xCx
@@ -1085,6 +1112,11 @@ impl Cpu {
                 Target8Bit::L => self.registers.l = value,
                 _ => todo!(),
             },
+            Operation::LDU8MEM { value } => {
+                let address = self.registers.hl();
+
+                memory.write_u8(address, value);
+            }
             Operation::LDU16 { target, value } => match target {
                 Target16Bit::BC => self.registers.set_bc(value),
                 Target16Bit::DE => self.registers.set_de(value),
@@ -1161,6 +1193,11 @@ impl Cpu {
                 self.registers.f.set_n(false);
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(will_carry);
+            }
+            Operation::SCF => {
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(true);
             }
             Operation::STOP => tracing::debug!("ignore stop instruction"),
             _ => todo!(),
@@ -2407,6 +2444,78 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_ld_u8_mem() {
+        let op_code: u8 = 0x36;
+
+        let mut memory = Memory::new();
+        memory.write_u8(1, 10);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(12, instruction.clock_ticks);
+        assert_eq!(Operation::LDU8MEM { value: 10 }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_scf() {
+        let op_code: u8 = 0x37;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::SCF, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_jr_c() {
+        let op_code: u8 = 0x38;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(1, 9);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(2, instruction.num_bytes);
+            assert_eq!(8, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JRC {
+                    target: CondJumpTarget::C,
+                    jump: false,
+                    offset: 9
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(1, 9);
+
+            let mut cpu = Cpu::new();
+            cpu.registers.f.set_c(true);
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(2, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JRC {
+                    target: CondJumpTarget::C,
+                    jump: true,
+                    offset: 9
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
     fn test_cpu_decode_ld_a_mem_dec() {
         let op_code = 0x3A;
 
@@ -2625,5 +2734,8 @@ mod json_tests {
     test_instruction!(test_33, "33.json", 0x33);
     test_instruction!(test_34, "34.json", 0x34);
     test_instruction!(test_35, "35.json", 0x35);
+    test_instruction!(test_36, "36.json", 0x36);
+    test_instruction!(test_37, "37.json", 0x37);
+    test_instruction!(test_38, "38.json", 0x38);
     test_instruction!(test_3A, "3a.json", 0x3A);
 }
