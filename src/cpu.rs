@@ -196,8 +196,6 @@ enum Target {
     H,
     /// L register.
     L,
-    /// Combined AF 16-bit register.
-    AF,
     /// Combined BC 16-bit register.
     BC,
     /// Combined DE 16-bit register.
@@ -267,10 +265,10 @@ impl Display for Target16Bit {
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
-    /// Adds the value in the [`Target`] register to the value in the HL register and stores it
+    /// Adds the value in the [`Target16Bit`] register to the value in the HL register and stores it
     /// back to the HL register.
     ADDHL {
-        target: Target,
+        target: Target16Bit,
     },
     /// Toggles the value of the carry flag.
     CCF,
@@ -449,9 +447,9 @@ impl Instruction {
             operation,
         }
     }
-    /// Creates a new instruction that adds the value in the [`Target`] register to the value in
-    /// the `HL` register and stores the result back to the `HL` register.
-    fn add_hl(target: Target) -> Self {
+    /// Creates a new instruction that adds the value in the [`Target16Bit`] register to the
+    /// value in the `HL` register and stores the result back to the `HL` register.
+    fn add_hl(target: Target16Bit) -> Self {
         Self::new(1, 8, Operation::ADDHL { target })
     }
     /// Creates a new instruction that toggles the value of the carry flag.
@@ -733,7 +731,7 @@ impl Cpu {
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
                 Target16Bit::SP,
             )),
-            0x09 => Some(Instruction::add_hl(Target::BC)),
+            0x09 => Some(Instruction::add_hl(Target16Bit::BC)),
             0x0A => Some(Instruction::ld_a_mem(Target16Bit::BC)),
             0x0B => Some(Instruction::dec_u16(Target::BC)),
             0x0C => Some(Instruction::inc(Target::C)),
@@ -762,7 +760,7 @@ impl Cpu {
             0x18 => Some(Instruction::jr(
                 memory.read_i8(self.registers.pc.wrapping_add(1)),
             )),
-            0x19 => Some(Instruction::add_hl(Target::DE)),
+            0x19 => Some(Instruction::add_hl(Target16Bit::DE)),
             0x1A => Some(Instruction::ld_a_mem(Target16Bit::DE)),
             0x1B => Some(Instruction::dec_u16(Target::DE)),
             0x1C => Some(Instruction::inc(Target::E)),
@@ -797,7 +795,7 @@ impl Cpu {
                 self.registers.f.z(),
                 memory.read_i8(self.registers.pc.wrapping_add(1)),
             )),
-            0x29 => Some(Instruction::add_hl(Target::HL)),
+            0x29 => Some(Instruction::add_hl(Target16Bit::HL)),
             0x2A => Some(Instruction::ld_a_mem_inc()),
             0x2B => Some(Instruction::dec_u16(Target::HL)),
             0x2C => Some(Instruction::inc(Target::L)),
@@ -831,7 +829,7 @@ impl Cpu {
                 self.registers.f.c(),
                 memory.read_i8(self.registers.pc.wrapping_add(1)),
             )),
-            0x39 => Some(Instruction::add_hl(Target::SP)),
+            0x39 => Some(Instruction::add_hl(Target16Bit::SP)),
             0x3A => Some(Instruction::ld_a_mem_dec()),
             0x3B => Some(Instruction::dec_u16(Target::SP)),
             0x3C => Some(Instruction::inc(Target::A)),
@@ -859,57 +857,25 @@ impl Cpu {
         tracing::debug!("execute instruction '{}'", instruction);
 
         match instruction.operation {
-            // TODO: cleanup
-            Operation::ADDHL { target } => match target {
-                Target::BC => {
-                    let hl = self.registers.hl();
-                    let bc = self.registers.bc();
+            Operation::ADDHL { target } => {
+                let hl = self.registers.hl();
 
-                    let (new_value, overflowed) = hl.overflowing_add(bc);
+                let target_value = match target {
+                    Target16Bit::BC => self.registers.bc(),
+                    Target16Bit::DE => self.registers.de(),
+                    Target16Bit::HL => self.registers.hl(),
+                    Target16Bit::SP => self.registers.sp,
+                };
 
-                    self.registers.set_hl(new_value);
+                let (new_value, overflowed) = hl.overflowing_add(target_value);
+                let will_half_carry = will_half_carry_add_u16(hl, target_value);
 
-                    self.registers.f.set_n(false);
-                    self.registers.f.set_h(will_half_carry_add_u16(hl, bc));
-                    self.registers.f.set_c(overflowed);
-                }
-                Target::DE => {
-                    let hl = self.registers.hl();
-                    let de = self.registers.de();
+                self.registers.set_hl(new_value);
 
-                    let (new_value, overflowed) = hl.overflowing_add(de);
-
-                    self.registers.set_hl(new_value);
-
-                    self.registers.f.set_n(false);
-                    self.registers.f.set_h(will_half_carry_add_u16(hl, de));
-                    self.registers.f.set_c(overflowed);
-                }
-                Target::HL => {
-                    let hl = self.registers.hl();
-
-                    let (new_value, overflowed) = hl.overflowing_add(hl);
-
-                    self.registers.set_hl(new_value);
-
-                    self.registers.f.set_n(false);
-                    self.registers.f.set_h(will_half_carry_add_u16(hl, hl));
-                    self.registers.f.set_c(overflowed);
-                }
-                Target::SP => {
-                    let hl = self.registers.hl();
-                    let sp = self.registers.sp;
-
-                    let (new_value, overflowed) = hl.overflowing_add(sp);
-
-                    self.registers.set_hl(new_value);
-
-                    self.registers.f.set_n(false);
-                    self.registers.f.set_h(will_half_carry_add_u16(hl, sp));
-                    self.registers.f.set_c(overflowed);
-                }
-                _ => todo!(),
-            },
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(will_half_carry);
+                self.registers.f.set_c(overflowed);
+            }
             Operation::CCF => {
                 self.registers.f.set_n(false);
                 self.registers.f.set_h(false);
@@ -917,7 +883,6 @@ impl Cpu {
             }
             Operation::CPL => {
                 self.registers.a = !self.registers.a;
-
                 self.registers.f.set_n(true);
                 self.registers.f.set_h(true);
             }
@@ -1019,7 +984,6 @@ impl Cpu {
                 Target::SP => {
                     self.registers.sp = self.registers.sp.wrapping_sub(1);
                 }
-                _ => panic!("invalid DEC target: {}", target),
             },
             Operation::DECMEM => {
                 let address = self.registers.hl();
@@ -1094,7 +1058,6 @@ impl Cpu {
                 Target::DE => self.registers.set_de(self.registers.de().wrapping_add(1)),
                 Target::HL => self.registers.set_hl(self.registers.hl().wrapping_add(1)),
                 Target::SP => self.registers.sp = self.registers.sp.wrapping_add(1),
-                _ => panic!("invalid INC target: {}", target),
             },
             Operation::INCMEM => {
                 let address = self.registers.hl();
@@ -1163,7 +1126,6 @@ impl Cpu {
                 Target8Bit::E => self.registers.e = value,
                 Target8Bit::H => self.registers.h = value,
                 Target8Bit::L => self.registers.l = value,
-                _ => todo!(),
             },
             Operation::LDU8MEM { value } => {
                 let address = self.registers.hl();
@@ -1175,7 +1137,6 @@ impl Cpu {
                 Target16Bit::DE => self.registers.set_de(value),
                 Target16Bit::HL => self.registers.set_hl(value),
                 Target16Bit::SP => self.registers.sp = value,
-                _ => todo!(),
             },
             Operation::NOP => {}
             Operation::PREFIX => {}
@@ -1580,7 +1541,9 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(8, instruction.clock_ticks);
         assert_eq!(
-            Operation::ADDHL { target: Target::BC },
+            Operation::ADDHL {
+                target: Target16Bit::BC
+            },
             instruction.operation
         );
     }
@@ -1891,7 +1854,9 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(8, instruction.clock_ticks);
         assert_eq!(
-            Operation::ADDHL { target: Target::DE },
+            Operation::ADDHL {
+                target: Target16Bit::DE
+            },
             instruction.operation
         );
     }
@@ -2241,7 +2206,9 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(8, instruction.clock_ticks);
         assert_eq!(
-            Operation::ADDHL { target: Target::HL },
+            Operation::ADDHL {
+                target: Target16Bit::HL
+            },
             instruction.operation
         );
     }
@@ -2580,7 +2547,9 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(8, instruction.clock_ticks);
         assert_eq!(
-            Operation::ADDHL { target: Target::SP },
+            Operation::ADDHL {
+                target: Target16Bit::SP
+            },
             instruction.operation
         );
     }
