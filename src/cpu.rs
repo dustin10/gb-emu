@@ -272,6 +272,8 @@ enum Operation {
     ADDHL {
         target: Target,
     },
+    /// Toggles the value of the carry flag.
+    CCF,
     /// Take the one's complement (i.e., flips all the bits) of the value in the `A` register.
     CPL,
     /// Adjust the `A` register to a binary-coded decimal (BCD) number after BCD addition and subtraction operations.
@@ -374,6 +376,7 @@ impl Display for Operation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Operation::ADDHL { target } => f.write_fmt(format_args!("ADD HL, {}", target)),
+            Operation::CCF => f.write_str("CCF"),
             Operation::CPL => f.write_str("CPL"),
             Operation::DAA => f.write_str("DAA"),
             Operation::DEC { target } => f.write_fmt(format_args!("DEC {}", target)),
@@ -450,6 +453,10 @@ impl Instruction {
     /// the `HL` register and stores the result back to the `HL` register.
     fn add_hl(target: Target) -> Self {
         Self::new(1, 8, Operation::ADDHL { target })
+    }
+    /// Creates a new instruction that toggles the value of the carry flag.
+    fn ccf() -> Self {
+        Self::new(1, 4, Operation::CCF)
     }
     /// Creates a new instruction which takes the one's complement (i.e., flips all the bits) of
     /// the value in the `A` register.
@@ -824,7 +831,16 @@ impl Cpu {
                 self.registers.f.c(),
                 memory.read_i8(self.registers.pc.wrapping_add(1)),
             )),
+            0x39 => Some(Instruction::add_hl(Target::SP)),
             0x3A => Some(Instruction::ld_a_mem_dec()),
+            0x3B => Some(Instruction::dec_u16(Target::SP)),
+            0x3C => Some(Instruction::inc(Target::A)),
+            0x3D => Some(Instruction::dec(Target::A)),
+            0x3E => Some(Instruction::ld_u8(
+                Target8Bit::A,
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
+            )),
+            0x3F => Some(Instruction::ccf()),
 
             // 0xCx
             0xCB => Some(Instruction::prefix()),
@@ -880,8 +896,25 @@ impl Cpu {
                     self.registers.f.set_h(will_half_carry_add_u16(hl, hl));
                     self.registers.f.set_c(overflowed);
                 }
+                Target::SP => {
+                    let hl = self.registers.hl();
+                    let sp = self.registers.sp;
+
+                    let (new_value, overflowed) = hl.overflowing_add(sp);
+
+                    self.registers.set_hl(new_value);
+
+                    self.registers.f.set_n(false);
+                    self.registers.f.set_h(will_half_carry_add_u16(hl, sp));
+                    self.registers.f.set_c(overflowed);
+                }
                 _ => todo!(),
             },
+            Operation::CCF => {
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(!self.registers.f.c());
+            }
             Operation::CPL => {
                 self.registers.a = !self.registers.a;
 
@@ -918,6 +951,14 @@ impl Cpu {
             }
             // TODO: cleanup
             Operation::DEC { target } => match target {
+                Target::A => {
+                    let old_value = self.registers.a;
+                    self.registers.a = self.registers.a.wrapping_sub(1);
+
+                    self.registers.f.set_z(self.registers.a == 0);
+                    self.registers.f.set_n(true);
+                    self.registers.f.set_h(will_half_carry_sub_u8(old_value, 1));
+                }
                 Target::B => {
                     let old_value = self.registers.b;
                     self.registers.b = self.registers.b.wrapping_sub(1);
@@ -975,6 +1016,9 @@ impl Cpu {
                 Target::HL => {
                     self.registers.set_hl(self.registers.hl().wrapping_sub(1));
                 }
+                Target::SP => {
+                    self.registers.sp = self.registers.sp.wrapping_sub(1);
+                }
                 _ => panic!("invalid DEC target: {}", target),
             },
             Operation::DECMEM => {
@@ -990,6 +1034,14 @@ impl Cpu {
             }
             // TODO: cleanup
             Operation::INC { target } => match target {
+                Target::A => {
+                    let old_value = self.registers.a;
+                    self.registers.a = self.registers.a.wrapping_add(1);
+
+                    self.registers.f.set_z(self.registers.a == 0);
+                    self.registers.f.set_n(false);
+                    self.registers.f.set_h(will_half_carry_add_u8(old_value, 1));
+                }
                 Target::B => {
                     let old_value = self.registers.b;
                     self.registers.b = self.registers.b.wrapping_add(1);
@@ -1104,6 +1156,7 @@ impl Cpu {
                 _ => todo!(),
             },
             Operation::LDU8 { target, value } => match target {
+                Target8Bit::A => self.registers.a = value,
                 Target8Bit::B => self.registers.b = value,
                 Target8Bit::C => self.registers.c = value,
                 Target8Bit::D => self.registers.d = value,
@@ -2516,6 +2569,23 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_add_hl_sp() {
+        let op_code: u8 = 0x39;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ADDHL { target: Target::SP },
+            instruction.operation
+        );
+    }
+
+    #[test]
     fn test_cpu_decode_ld_a_mem_dec() {
         let op_code = 0x3A;
 
@@ -2527,6 +2597,83 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(8, instruction.clock_ticks);
         assert_eq!(Operation::LDAMEMDEC, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_dec_sp() {
+        let op_code: u8 = 0x3B;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::DEC { target: Target::SP }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_inc_a() {
+        let op_code: u8 = 0x3C;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::INC { target: Target::A }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_dec_a() {
+        let op_code: u8 = 0x3D;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::DEC { target: Target::A }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_u8_a() {
+        let op_code: u8 = 0x3E;
+
+        let mut memory = Memory::new();
+        memory.write_u8(1, 20);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDU8 {
+                target: Target8Bit::A,
+                value: 20
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ccf() {
+        let op_code: u8 = 0x3F;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::CCF, instruction.operation);
     }
 
     #[test]
@@ -2737,5 +2884,11 @@ mod json_tests {
     test_instruction!(test_36, "36.json", 0x36);
     test_instruction!(test_37, "37.json", 0x37);
     test_instruction!(test_38, "38.json", 0x38);
+    test_instruction!(test_39, "39.json", 0x39);
     test_instruction!(test_3A, "3a.json", 0x3A);
+    test_instruction!(test_3B, "3b.json", 0x3B);
+    test_instruction!(test_3C, "3c.json", 0x3C);
+    test_instruction!(test_3D, "3d.json", 0x3D);
+    test_instruction!(test_3E, "3e.json", 0x3E);
+    test_instruction!(test_3F, "3f.json", 0x3F);
 }
