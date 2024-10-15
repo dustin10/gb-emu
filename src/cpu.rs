@@ -892,6 +892,16 @@ impl Cpu {
             0x6E => Some(Instruction::ld_reg_mem(Target8Bit::L, Target16Bit::HL)),
             0x6F => Some(Instruction::ld_reg(Target8Bit::L, Target8Bit::A)),
 
+            // 0x7x
+            0x78 => Some(Instruction::ld_reg(Target8Bit::A, Target8Bit::B)),
+            0x79 => Some(Instruction::ld_reg(Target8Bit::A, Target8Bit::C)),
+            0x7A => Some(Instruction::ld_reg(Target8Bit::A, Target8Bit::D)),
+            0x7B => Some(Instruction::ld_reg(Target8Bit::A, Target8Bit::E)),
+            0x7C => Some(Instruction::ld_reg(Target8Bit::A, Target8Bit::H)),
+            0x7D => Some(Instruction::ld_reg(Target8Bit::A, Target8Bit::L)),
+            0x7E => Some(Instruction::ld_reg_mem(Target8Bit::A, Target16Bit::HL)),
+            0x7F => Some(Instruction::ld_reg(Target8Bit::A, Target8Bit::A)),
+
             // 0xCx
             0xCB => Some(Instruction::prefix()),
             _ => None,
@@ -3699,6 +3709,166 @@ mod tests {
             instruction.operation
         );
     }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_a_b() {
+        let op_code: u8 = 0x78;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::A,
+                target: Target8Bit::B
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_a_c() {
+        let op_code: u8 = 0x79;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::A,
+                target: Target8Bit::C
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_a_d() {
+        let op_code: u8 = 0x7A;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::A,
+                target: Target8Bit::D
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_a_e() {
+        let op_code: u8 = 0x7B;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::A,
+                target: Target8Bit::E
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_a_h() {
+        let op_code: u8 = 0x7C;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::A,
+                target: Target8Bit::H
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_a_l() {
+        let op_code: u8 = 0x7D;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::A,
+                target: Target8Bit::L
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_mem_a_hl() {
+        let op_code: u8 = 0x7E;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREGMEM {
+                store: Target8Bit::A,
+                target: Target16Bit::HL
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_a_a() {
+        let op_code: u8 = 0x7F;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::A,
+                target: Target8Bit::A,
+            },
+            instruction.operation
+        );
+    }
     #[test]
     fn test_cpu_decode_prefix() {
         let op_code: u8 = 0xCB;
@@ -3968,4 +4138,14 @@ mod json_tests {
     test_instruction!(test_6D, "6d.json", 0x6D);
     test_instruction!(test_6E, "6e.json", 0x6E);
     test_instruction!(test_6F, "6f.json", 0x6F);
+
+    // 0x7x
+    test_instruction!(test_78, "78.json", 0x78);
+    test_instruction!(test_79, "79.json", 0x79);
+    test_instruction!(test_7A, "7a.json", 0x7A);
+    test_instruction!(test_7B, "7b.json", 0x7B);
+    test_instruction!(test_7C, "7c.json", 0x7C);
+    test_instruction!(test_7D, "7d.json", 0x7D);
+    test_instruction!(test_7E, "7e.json", 0x7E);
+    test_instruction!(test_7F, "7f.json", 0x7F);
 }
