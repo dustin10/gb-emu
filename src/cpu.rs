@@ -267,9 +267,7 @@ impl Display for Target16Bit {
 enum Operation {
     /// Adds the value in the [`Target16Bit`] register to the value in the HL register and stores it
     /// back to the HL register.
-    ADDHL {
-        target: Target16Bit,
-    },
+    ADDHL { target: Target16Bit },
     /// Toggles the value of the carry flag.
     CCF,
     /// Take the one's complement (i.e., flips all the bits) of the value in the `A` register.
@@ -277,21 +275,15 @@ enum Operation {
     /// Adjust the `A` register to a binary-coded decimal (BCD) number after BCD addition and subtraction operations.
     DAA,
     /// Decrements the value in the [`Target`] register by one.
-    DEC {
-        target: Target,
-    },
+    DEC { target: Target },
     /// Decrements the value at the memory address specified by value of the `HL` register by 1.
     DECMEM,
     /// Increments the value in the [`Target`] register by one.
-    INC {
-        target: Target,
-    },
+    INC { target: Target },
     /// Increments the value at the memory address specified by value of the `HL` register by 1.
     INCMEM,
     /// Jumps to a relative memory address by advancing the program counter by the offset.
-    JR {
-        offset: i8,
-    },
+    JR { offset: i8 },
     /// Conditionally jumps to a relative memory address by advancing the program counter by the
     /// offset based on the state of the [`CondJumpTarget`].
     JRC {
@@ -301,9 +293,7 @@ enum Operation {
     },
     /// Loads the value from the `A` register and stores it in the memory address corresponding to
     /// the value in the [`Target16Bit`] register.
-    LDA {
-        target: Target16Bit,
-    },
+    LDA { target: Target16Bit },
     /// Loads the value from the `A` register and stores it in the memory address corresponding to
     /// the value in the `HL` register and then decrements the `HL` register.
     LDADEC,
@@ -312,9 +302,7 @@ enum Operation {
     LDAINC,
     /// Loads the value from memory at the address `A` register and stores it in the memory address
     /// corresponding to the value of the [`Target8Bit`] register and stores it in the `A` register.
-    LDAMEM {
-        target: Target16Bit,
-    },
+    LDAMEM { target: Target16Bit },
     /// Loads the the byte from memory at the address corresponding to the value of the
     /// `HL` register and stores it in the `A` register, then decrements the value in the `HL`
     /// register.
@@ -324,10 +312,7 @@ enum Operation {
     /// register.
     LDAMEMINC,
     /// Loads the value in the [`Target16Bit`] register and stores it at the address in memory.
-    LDA16 {
-        address: u16,
-        target: Target16Bit,
-    },
+    LDA16 { address: u16, target: Target16Bit },
     /// Loads the value in the `target` 8-bit register and stores it into the `store` 8-bit
     /// register.
     LDREG {
@@ -341,43 +326,28 @@ enum Operation {
         target: Target16Bit,
     },
     /// Loads the [`u16`] value from memory and stores it in the [`Target16Bit`] register.
-    LDU16 {
-        target: Target16Bit,
-        value: u16,
-    },
+    LDU16 { target: Target16Bit, value: u16 },
     /// Loads the [`u8`] value from memory and stores it in the [`Target8Bit`] register.
-    LDU8 {
-        target: Target8Bit,
-        value: u8,
-    },
+    LDU8 { target: Target8Bit, value: u8 },
     /// Loads an immediate u8 and then writes it to the memory address pointed to by the value
     /// in the `HL` register.
-    LDU8MEM {
-        value: u8,
-    },
+    LDU8MEM { value: u8 },
     /// No operation.
     NOP,
     /// Prefix op code which causes the subsequent byte to represent a different set of
     /// instructions.
     PREFIX,
     /// Bit rotate the [`Target`] register left by one, through the carry flag.
-    RL {
-        target: Target,
-    },
+    RL { target: Target },
     /// Bit rotate the [`Target`] register left by one, not through the carry flag.
-    RLC {
-        target: Target,
-    },
+    RLC { target: Target },
     /// Bit rotate the [`Target`] register left by one, through the carry flag.
-    RR {
-        target: Target,
-    },
+    RR { target: Target },
     /// Bit rotate the [`Target`] register right by one, not through the carry flag.
-    RRC {
-        target: Target,
-    },
+    RRC { target: Target },
     /// Sets the carry flag.
     SCF,
+    /// Stops the system clock and stop mode is entered.
     STOP,
 }
 
@@ -885,6 +855,24 @@ impl Cpu {
             0x4D => Some(Instruction::ld_reg(Target8Bit::C, Target8Bit::L)),
             0x4E => Some(Instruction::ld_reg_mem(Target8Bit::C, Target16Bit::HL)),
             0x4F => Some(Instruction::ld_reg(Target8Bit::C, Target8Bit::A)),
+
+            // 0x5x
+            0x50 => Some(Instruction::ld_reg(Target8Bit::D, Target8Bit::B)),
+            0x51 => Some(Instruction::ld_reg(Target8Bit::D, Target8Bit::C)),
+            0x52 => Some(Instruction::ld_reg(Target8Bit::D, Target8Bit::D)),
+            0x53 => Some(Instruction::ld_reg(Target8Bit::D, Target8Bit::E)),
+            0x54 => Some(Instruction::ld_reg(Target8Bit::D, Target8Bit::H)),
+            0x55 => Some(Instruction::ld_reg(Target8Bit::D, Target8Bit::L)),
+            0x56 => Some(Instruction::ld_reg_mem(Target8Bit::D, Target16Bit::HL)),
+            0x57 => Some(Instruction::ld_reg(Target8Bit::D, Target8Bit::A)),
+            0x58 => Some(Instruction::ld_reg(Target8Bit::E, Target8Bit::B)),
+            0x59 => Some(Instruction::ld_reg(Target8Bit::E, Target8Bit::C)),
+            0x5A => Some(Instruction::ld_reg(Target8Bit::E, Target8Bit::D)),
+            0x5B => Some(Instruction::ld_reg(Target8Bit::E, Target8Bit::E)),
+            0x5C => Some(Instruction::ld_reg(Target8Bit::E, Target8Bit::H)),
+            0x5D => Some(Instruction::ld_reg(Target8Bit::E, Target8Bit::L)),
+            0x5E => Some(Instruction::ld_reg_mem(Target8Bit::E, Target16Bit::HL)),
+            0x5F => Some(Instruction::ld_reg(Target8Bit::E, Target8Bit::A)),
 
             // 0xCx
             0xCB => Some(Instruction::prefix()),
@@ -3055,6 +3043,326 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_ld_reg_d_b() {
+        let op_code: u8 = 0x50;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::D,
+                target: Target8Bit::B
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_d_c() {
+        let op_code: u8 = 0x51;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::D,
+                target: Target8Bit::C
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_d_d() {
+        let op_code: u8 = 0x52;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::D,
+                target: Target8Bit::D
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_d_e() {
+        let op_code: u8 = 0x53;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::D,
+                target: Target8Bit::E
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_d_h() {
+        let op_code: u8 = 0x54;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::D,
+                target: Target8Bit::H
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_d_l() {
+        let op_code: u8 = 0x55;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::D,
+                target: Target8Bit::L
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_mem_d_hl() {
+        let op_code: u8 = 0x56;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREGMEM {
+                store: Target8Bit::D,
+                target: Target16Bit::HL
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_d_a() {
+        let op_code: u8 = 0x57;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::D,
+                target: Target8Bit::A,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_e_b() {
+        let op_code: u8 = 0x58;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::E,
+                target: Target8Bit::B
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_e_c() {
+        let op_code: u8 = 0x59;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::E,
+                target: Target8Bit::C
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_e_d() {
+        let op_code: u8 = 0x5A;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::E,
+                target: Target8Bit::D
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_e_e() {
+        let op_code: u8 = 0x5B;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::E,
+                target: Target8Bit::E
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_e_h() {
+        let op_code: u8 = 0x5C;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::E,
+                target: Target8Bit::H
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_e_l() {
+        let op_code: u8 = 0x5D;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::E,
+                target: Target8Bit::L
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_mem_e_hl() {
+        let op_code: u8 = 0x5E;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREGMEM {
+                store: Target8Bit::E,
+                target: Target16Bit::HL
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_ld_reg_e_a() {
+        let op_code: u8 = 0x5F;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::LDREG {
+                store: Target8Bit::E,
+                target: Target8Bit::A,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
     fn test_cpu_decode_prefix() {
         let op_code: u8 = 0xCB;
 
@@ -3287,4 +3595,22 @@ mod json_tests {
     test_instruction!(test_4D, "4d.json", 0x4D);
     test_instruction!(test_4E, "4e.json", 0x4E);
     test_instruction!(test_4F, "4f.json", 0x4F);
+
+    // 0x5x
+    test_instruction!(test_50, "50.json", 0x50);
+    test_instruction!(test_51, "51.json", 0x51);
+    test_instruction!(test_52, "52.json", 0x52);
+    test_instruction!(test_53, "53.json", 0x53);
+    test_instruction!(test_54, "54.json", 0x54);
+    test_instruction!(test_55, "55.json", 0x55);
+    test_instruction!(test_56, "56.json", 0x56);
+    test_instruction!(test_57, "57.json", 0x57);
+    test_instruction!(test_58, "58.json", 0x58);
+    test_instruction!(test_59, "59.json", 0x59);
+    test_instruction!(test_5A, "5a.json", 0x5A);
+    test_instruction!(test_5B, "5b.json", 0x5B);
+    test_instruction!(test_5C, "5c.json", 0x5C);
+    test_instruction!(test_5D, "5d.json", 0x5D);
+    test_instruction!(test_5E, "5e.json", 0x5E);
+    test_instruction!(test_5F, "5f.json", 0x5F);
 }
