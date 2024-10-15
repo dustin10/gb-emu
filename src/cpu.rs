@@ -265,6 +265,12 @@ impl Display for Target16Bit {
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
+    /// Adds the value in the [`Target8Bit`] register to the value in the `A` register and stores
+    /// the result back to the `A` register.
+    ADDA { target: Target8Bit },
+    /// Adds the value at the memory address pointed to by the value in the `HL` register to the
+    /// value in the `A` register and stores the result back to the `A` register.
+    ADDAMEM,
     /// Adds the value in the [`Target16Bit`] register to the value in the HL register and stores it
     /// back to the HL register.
     ADDHL { target: Target16Bit },
@@ -363,6 +369,8 @@ impl Display for Operation {
     /// Writes a string representation of the [`Operation`] to the formatter.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Operation::ADDA { target } => f.write_fmt(format_args!("ADD A, {}", target)),
+            Operation::ADDAMEM => f.write_str("ADD A, [HL]"),
             Operation::ADDHL { target } => f.write_fmt(format_args!("ADD HL, {}", target)),
             Operation::CCF => f.write_str("CCF"),
             Operation::CPL => f.write_str("CPL"),
@@ -446,6 +454,17 @@ impl Instruction {
             clock_ticks,
             operation,
         }
+    }
+    /// Creates a new instruction that adds the value in the [`Target16Bit`] register to the
+    /// value in the HL register and stores it back to the HL register.
+    fn add_a(target: Target8Bit) -> Self {
+        Self::new(1, 4, Operation::ADDA { target })
+    }
+    /// Creates a new instruction that adds the value at the memory address pointed to by the
+    /// value in the `HL` register to the value in the `A` register and stores the result back
+    /// to the `A` register.
+    fn add_a_mem() -> Self {
+        Self::new(1, 8, Operation::ADDAMEM)
     }
     /// Creates a new instruction that adds the value in the [`Target16Bit`] register to the
     /// value in the `HL` register and stores the result back to the `HL` register.
@@ -935,6 +954,16 @@ impl Cpu {
             0x7E => Some(Instruction::ld_reg_mem(Target8Bit::A, Target16Bit::HL)),
             0x7F => Some(Instruction::ld_reg(Target8Bit::A, Target8Bit::A)),
 
+            // 0x8x
+            0x80 => Some(Instruction::add_a(Target8Bit::B)),
+            0x81 => Some(Instruction::add_a(Target8Bit::C)),
+            0x82 => Some(Instruction::add_a(Target8Bit::D)),
+            0x83 => Some(Instruction::add_a(Target8Bit::E)),
+            0x84 => Some(Instruction::add_a(Target8Bit::H)),
+            0x85 => Some(Instruction::add_a(Target8Bit::L)),
+            0x86 => Some(Instruction::add_a_mem()),
+            0x87 => Some(Instruction::add_a(Target8Bit::A)),
+
             // 0xCx
             0xCB => Some(Instruction::prefix()),
 
@@ -953,6 +982,45 @@ impl Cpu {
         tracing::debug!("execute instruction '{}'", instruction);
 
         match instruction.operation {
+            Operation::ADDA { target } => {
+                let a = self.registers.a;
+
+                let target_value = match target {
+                    Target8Bit::A => self.registers.a,
+                    Target8Bit::B => self.registers.b,
+                    Target8Bit::C => self.registers.c,
+                    Target8Bit::D => self.registers.d,
+                    Target8Bit::E => self.registers.e,
+                    Target8Bit::H => self.registers.h,
+                    Target8Bit::L => self.registers.l,
+                };
+
+                let (new_value, overflowed) = a.overflowing_add(target_value);
+
+                self.registers.a = new_value;
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(false);
+                self.registers
+                    .f
+                    .set_h(will_half_carry_add_u8(a, target_value));
+                self.registers.f.set_c(overflowed);
+            }
+            Operation::ADDAMEM => {
+                let a = self.registers.a;
+                let hl = self.registers.hl();
+
+                let mem_value = memory.read_u8(hl);
+
+                let (new_value, overflowed) = a.overflowing_add(mem_value);
+
+                self.registers.a = new_value;
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(will_half_carry_add_u8(a, mem_value));
+                self.registers.f.set_c(overflowed);
+            }
             Operation::ADDHL { target } => {
                 let hl = self.registers.hl();
 
@@ -4078,6 +4146,153 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_add_a_b() {
+        let op_code: u8 = 0x80;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ADDA {
+                target: Target8Bit::B,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_add_a_c() {
+        let op_code: u8 = 0x81;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ADDA {
+                target: Target8Bit::C,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_add_a_d() {
+        let op_code: u8 = 0x82;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ADDA {
+                target: Target8Bit::D,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_add_a_e() {
+        let op_code: u8 = 0x83;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ADDA {
+                target: Target8Bit::E,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_add_a_h() {
+        let op_code: u8 = 0x84;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ADDA {
+                target: Target8Bit::H,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_add_a_l() {
+        let op_code: u8 = 0x85;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ADDA {
+                target: Target8Bit::L,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_add_a_mem() {
+        let op_code: u8 = 0x86;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::ADDAMEM, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_add_a_a() {
+        let op_code: u8 = 0x87;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ADDA {
+                target: Target8Bit::A,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
     fn test_cpu_decode_prefix() {
         let op_code: u8 = 0xCB;
 
@@ -4364,4 +4579,14 @@ mod json_tests {
     test_instruction!(test_7D, "7d.json", 0x7D);
     test_instruction!(test_7E, "7e.json", 0x7E);
     test_instruction!(test_7F, "7f.json", 0x7F);
+
+    // 0x8x
+    test_instruction!(test_80, "80.json", 0x80);
+    test_instruction!(test_81, "81.json", 0x81);
+    test_instruction!(test_82, "82.json", 0x82);
+    test_instruction!(test_83, "83.json", 0x83);
+    test_instruction!(test_84, "84.json", 0x84);
+    test_instruction!(test_85, "85.json", 0x85);
+    test_instruction!(test_86, "86.json", 0x86);
+    test_instruction!(test_87, "87.json", 0x87);
 }
