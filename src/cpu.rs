@@ -362,6 +362,13 @@ enum Operation {
     LDU8MEM { value: u8 },
     /// No operation.
     NOP,
+    /// Takes the logical OR for each bit of the contents of the [`Target8Bit`] register and the
+    /// contents of the `A` register and stores the result back to the `A` register.
+    ORA { target: Target8Bit },
+    /// Takes the logical OR for each bit of the contents of the value in memory pointed at by the
+    /// [`HL`] register and the contents of the `A` register and stores the result back to the `A`
+    /// register.
+    ORAMEM,
     /// Prefix op code which causes the subsequent byte to represent a different set of
     /// instructions.
     PREFIX,
@@ -447,6 +454,8 @@ impl Display for Operation {
             }
             Operation::LDU8MEM { value } => f.write_fmt(format_args!("LD [HL], {:#4x}", value)),
             Operation::NOP => f.write_str("NOP"),
+            Operation::ORA { target } => f.write_fmt(format_args!("OR A, {}", target)),
+            Operation::ORAMEM => f.write_str("OR A, [HL]"),
             Operation::PREFIX => f.write_str("PREFIX"),
             Operation::RL { target } => match target {
                 Target::A => f.write_str("RLA"),
@@ -670,6 +679,18 @@ impl Instruction {
     /// Creates a new no op instruction.
     fn nop() -> Self {
         Self::new(1, 4, Operation::NOP)
+    }
+    /// Creates a new instruction that takes the logical OR for each bit of the contents of
+    /// the [`Target8Bit`] register and the contents of the `A` register and stores the result
+    /// back to the `A` register.
+    fn or_a(target: Target8Bit) -> Self {
+        Self::new(1, 4, Operation::ORA { target })
+    }
+    /// Creates a new instruction that takes the logical OR for each bit of the contents of the
+    /// value in memory pointed at by the [`HL`] register and the contents of the `A` register
+    /// and stores the result back to the `A` register.
+    fn or_a_mem() -> Self {
+        Self::new(1, 8, Operation::ORAMEM)
     }
     /// Creates a new prefix instruction.
     fn prefix() -> Self {
@@ -1109,6 +1130,16 @@ impl Cpu {
             0xAD => Some(Instruction::xor_a(Target8Bit::L)),
             0xAE => Some(Instruction::xor_a_mem()),
             0xAF => Some(Instruction::xor_a(Target8Bit::A)),
+
+            // 0xBx
+            0xB0 => Some(Instruction::or_a(Target8Bit::B)),
+            0xB1 => Some(Instruction::or_a(Target8Bit::C)),
+            0xB2 => Some(Instruction::or_a(Target8Bit::D)),
+            0xB3 => Some(Instruction::or_a(Target8Bit::E)),
+            0xB4 => Some(Instruction::or_a(Target8Bit::H)),
+            0xB5 => Some(Instruction::or_a(Target8Bit::L)),
+            0xB6 => Some(Instruction::or_a_mem()),
+            0xB7 => Some(Instruction::or_a(Target8Bit::A)),
 
             // 0xCx
             0xCB => Some(Instruction::prefix()),
@@ -1594,6 +1625,36 @@ impl Cpu {
                 Target16Bit::SP => self.registers.sp = value,
             },
             Operation::NOP => {}
+            Operation::ORA { target } => {
+                let target_value = match target {
+                    Target8Bit::A => self.registers.a,
+                    Target8Bit::B => self.registers.b,
+                    Target8Bit::C => self.registers.c,
+                    Target8Bit::D => self.registers.d,
+                    Target8Bit::E => self.registers.e,
+                    Target8Bit::H => self.registers.h,
+                    Target8Bit::L => self.registers.l,
+                };
+
+                self.registers.a |= target_value;
+
+                self.registers.f.set_z(self.registers.a == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(false);
+            }
+            Operation::ORAMEM => {
+                let hl = self.registers.hl();
+
+                let mem_value = memory.read_u8(hl);
+
+                self.registers.a |= mem_value;
+
+                self.registers.f.set_z(self.registers.a == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(false);
+            }
             Operation::PREFIX => {}
             // TODO: cleanup
             Operation::RL { target } => {
@@ -5378,6 +5439,153 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_or_a_b() {
+        let op_code: u8 = 0xB0;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ORA {
+                target: Target8Bit::B,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_or_a_c() {
+        let op_code: u8 = 0xB1;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ORA {
+                target: Target8Bit::C,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_or_a_d() {
+        let op_code: u8 = 0xB2;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ORA {
+                target: Target8Bit::D,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_or_a_e() {
+        let op_code: u8 = 0xB3;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ORA {
+                target: Target8Bit::E,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_or_a_h() {
+        let op_code: u8 = 0xB4;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ORA {
+                target: Target8Bit::H,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_or_a_l() {
+        let op_code: u8 = 0xB5;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ORA {
+                target: Target8Bit::L,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_or_a_mem() {
+        let op_code: u8 = 0xB6;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::ORAMEM, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_or_a_a() {
+        let op_code: u8 = 0xB7;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::ORA {
+                target: Target8Bit::A,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
     fn test_cpu_decode_prefix() {
         let op_code: u8 = 0xCB;
 
@@ -5718,4 +5926,14 @@ mod json_tests {
     test_instruction!(test_AD, "Ad.json", 0xAD);
     test_instruction!(test_AE, "Ae.json", 0xAE);
     test_instruction!(test_AF, "Af.json", 0xAF);
+
+    // 0xBx
+    test_instruction!(test_B0, "B0.json", 0xB0);
+    test_instruction!(test_B1, "B1.json", 0xB1);
+    test_instruction!(test_B2, "B2.json", 0xB2);
+    test_instruction!(test_B3, "B3.json", 0xB3);
+    test_instruction!(test_B4, "B4.json", 0xB4);
+    test_instruction!(test_B5, "B5.json", 0xB5);
+    test_instruction!(test_B6, "B6.json", 0xB6);
+    test_instruction!(test_B7, "B7.json", 0xB7);
 }
