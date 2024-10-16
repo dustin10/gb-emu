@@ -389,6 +389,13 @@ enum Operation {
     /// Subtracts the value at the memory address pointed to by the value in the `HL` register
     /// from the value in the `A` register and stores the result back to the `A` register.
     SUBAMEM,
+    /// Takes the logical XOR for each bit of the contents of the [`Target8Bit`] register and the
+    /// contents of the `A` register and stores the result back to the `A` register.
+    XORA { target: Target8Bit },
+    /// Takes the logical XOR for each bit of the contents of the value in memory pointed at by the
+    /// [`HL`] register and the contents of the `A` register and stores the result back to the `A`
+    /// register.
+    XORAMEM,
 }
 
 impl Display for Operation {
@@ -463,6 +470,8 @@ impl Display for Operation {
             Operation::STOP => f.write_str("STOP"),
             Operation::SUBA { target } => f.write_fmt(format_args!("SUB A, {}", target)),
             Operation::SUBAMEM => f.write_str("SUB A, [HL]"),
+            Operation::XORA { target } => f.write_fmt(format_args!("XOR A, {}", target)),
+            Operation::XORAMEM => f.write_str("XOR A, [HL]"),
         }
     }
 }
@@ -736,6 +745,18 @@ impl Instruction {
     /// the `A` register.
     fn sub_a_mem() -> Self {
         Self::new(1, 8, Operation::SUBAMEM)
+    }
+    /// Creates a new instruction that takes the logical XOR for each bit of the contents of
+    /// the [`Target8Bit`] register and the contents of the `A` register and stores the result
+    /// back to the `A` register.
+    fn xor_a(target: Target8Bit) -> Self {
+        Self::new(1, 4, Operation::XORA { target })
+    }
+    /// Creates a new instruction that takes the logical XOR for each bit of the contents of the
+    /// value in memory pointed at by the [`HL`] register and the contents of the `A` register
+    /// and stores the result back to the `A` register.
+    fn xor_a_mem() -> Self {
+        Self::new(1, 8, Operation::XORAMEM)
     }
 }
 
@@ -1080,6 +1101,14 @@ impl Cpu {
             0xA5 => Some(Instruction::and_a(Target8Bit::L)),
             0xA6 => Some(Instruction::and_a_mem()),
             0xA7 => Some(Instruction::and_a(Target8Bit::A)),
+            0xA8 => Some(Instruction::xor_a(Target8Bit::B)),
+            0xA9 => Some(Instruction::xor_a(Target8Bit::C)),
+            0xAA => Some(Instruction::xor_a(Target8Bit::D)),
+            0xAB => Some(Instruction::xor_a(Target8Bit::E)),
+            0xAC => Some(Instruction::xor_a(Target8Bit::H)),
+            0xAD => Some(Instruction::xor_a(Target8Bit::L)),
+            0xAE => Some(Instruction::xor_a_mem()),
+            0xAF => Some(Instruction::xor_a(Target8Bit::A)),
 
             // 0xCx
             0xCB => Some(Instruction::prefix()),
@@ -1730,6 +1759,36 @@ impl Cpu {
                 self.registers.f.set_n(true);
                 self.registers.f.set_h(will_half_carry_sub_u8(a, mem_value));
                 self.registers.f.set_c(overflowed);
+            }
+            Operation::XORA { target } => {
+                let target_value = match target {
+                    Target8Bit::A => self.registers.a,
+                    Target8Bit::B => self.registers.b,
+                    Target8Bit::C => self.registers.c,
+                    Target8Bit::D => self.registers.d,
+                    Target8Bit::E => self.registers.e,
+                    Target8Bit::H => self.registers.h,
+                    Target8Bit::L => self.registers.l,
+                };
+
+                self.registers.a ^= target_value;
+
+                self.registers.f.set_z(self.registers.a == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(false);
+            }
+            Operation::XORAMEM => {
+                let hl = self.registers.hl();
+
+                let mem_value = memory.read_u8(hl);
+
+                self.registers.a ^= mem_value;
+
+                self.registers.f.set_z(self.registers.a == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(false);
             }
             _ => todo!(),
         }
@@ -5172,6 +5231,153 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_xor_a_b() {
+        let op_code: u8 = 0xA8;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::XORA {
+                target: Target8Bit::B,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_xor_a_c() {
+        let op_code: u8 = 0xA9;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::XORA {
+                target: Target8Bit::C,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_xor_a_d() {
+        let op_code: u8 = 0xAA;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::XORA {
+                target: Target8Bit::D,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_xor_a_e() {
+        let op_code: u8 = 0xAB;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::XORA {
+                target: Target8Bit::E,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_xor_a_h() {
+        let op_code: u8 = 0xAC;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::XORA {
+                target: Target8Bit::H,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_xor_a_l() {
+        let op_code: u8 = 0xAD;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::XORA {
+                target: Target8Bit::L,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_xor_a_mem() {
+        let op_code: u8 = 0xAE;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::XORAMEM, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_xor_a_a() {
+        let op_code: u8 = 0xAF;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::XORA {
+                target: Target8Bit::A,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
     fn test_cpu_decode_prefix() {
         let op_code: u8 = 0xCB;
 
@@ -5504,4 +5710,12 @@ mod json_tests {
     test_instruction!(test_A5, "A5.json", 0xA5);
     test_instruction!(test_A6, "A6.json", 0xA6);
     test_instruction!(test_A7, "A7.json", 0xA7);
+    test_instruction!(test_A8, "A8.json", 0xA8);
+    test_instruction!(test_A9, "A9.json", 0xA9);
+    test_instruction!(test_AA, "Aa.json", 0xAA);
+    test_instruction!(test_AB, "Ab.json", 0xAB);
+    test_instruction!(test_AC, "Ac.json", 0xAC);
+    test_instruction!(test_AD, "Ad.json", 0xAD);
+    test_instruction!(test_AE, "Ae.json", 0xAE);
+    test_instruction!(test_AF, "Af.json", 0xAF);
 }
