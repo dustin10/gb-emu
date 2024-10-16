@@ -380,6 +380,9 @@ enum Operation {
     /// Prefix op code which causes the subsequent byte to represent a different set of
     /// instructions.
     PREFIX,
+    /// Conditionally pops from the memory stack the program counter value that was pushed to the
+    /// stack when the subroutine was called based on the state of the [`CondJumpTarget`].
+    RET { target: CondJumpTarget, jump: bool },
     /// Bit rotate the [`Target`] register left by one, through the carry flag.
     RL { target: Target },
     /// Bit rotate the [`Target`] register left by one, not through the carry flag.
@@ -467,6 +470,7 @@ impl Display for Operation {
             Operation::ORA { target } => f.write_fmt(format_args!("OR A, {}", target)),
             Operation::ORAMEM => f.write_str("OR A, [HL]"),
             Operation::PREFIX => f.write_str("PREFIX"),
+            Operation::RET { target, .. } => f.write_fmt(format_args!("RET {}", target)),
             Operation::RL { target } => match target {
                 Target::A => f.write_str("RLA"),
                 _ => f.write_fmt(format_args!("RL {}", target)),
@@ -718,6 +722,14 @@ impl Instruction {
     /// Creates a new prefix instruction.
     fn prefix() -> Self {
         Self::new(1, 4, Operation::PREFIX)
+    }
+    /// Creates a new instruction that conditionally pops from the memory stack the program
+    /// counter value that was pushed to the stack when the subroutine was called based on the
+    /// state of the [`CondJumpTarget`].
+    fn ret(target: CondJumpTarget, jump: bool) -> Self {
+        let t = if jump { 20 } else { 8 };
+
+        Self::new(1, t, Operation::RET { target, jump })
     }
     /// Creates a new instruction that bit rotates the value in the [`Target`] register left by
     /// one through the carry flag.
@@ -1173,7 +1185,13 @@ impl Cpu {
             0xBF => Some(Instruction::cp_a(Target8Bit::A)),
 
             // 0xCx
+            0xC0 => Some(Instruction::ret(CondJumpTarget::NZ, !self.registers.f.z())),
+            0xC8 => Some(Instruction::ret(CondJumpTarget::Z, self.registers.f.z())),
             0xCB => Some(Instruction::prefix()),
+
+            // 0xDx
+            0xD0 => Some(Instruction::ret(CondJumpTarget::NC, !self.registers.f.c())),
+            0xD8 => Some(Instruction::ret(CondJumpTarget::C, self.registers.f.c())),
 
             _ => None,
         }
@@ -1722,6 +1740,16 @@ impl Cpu {
                 self.registers.f.set_c(false);
             }
             Operation::PREFIX => {}
+            Operation::RET { jump, .. } => {
+                if jump {
+                    let low = memory.read_u8(self.registers.sp) as u16;
+                    self.registers.sp += 1;
+                    let high = memory.read_u8(self.registers.sp) as u16;
+                    self.registers.sp += 1;
+
+                    self.registers.pc = (high << 8) | low;
+                }
+            }
             // TODO: cleanup
             Operation::RL { target } => {
                 let mut value = match target {
@@ -5799,6 +5827,84 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_ret_nz() {
+        let op_code: u8 = 0xC0;
+
+        {
+            let memory = Memory::new();
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(1, instruction.num_bytes);
+            assert_eq!(20, instruction.clock_ticks);
+            assert_eq!(
+                Operation::RET {
+                    target: CondJumpTarget::NZ,
+                    jump: true,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.f.set_z(true);
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(1, instruction.num_bytes);
+            assert_eq!(8, instruction.clock_ticks);
+            assert_eq!(
+                Operation::RET {
+                    target: CondJumpTarget::NZ,
+                    jump: false,
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
+    fn test_cpu_decode_ret_z() {
+        let op_code: u8 = 0xC8;
+
+        {
+            let memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.f.set_z(true);
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(1, instruction.num_bytes);
+            assert_eq!(20, instruction.clock_ticks);
+            assert_eq!(
+                Operation::RET {
+                    target: CondJumpTarget::Z,
+                    jump: true,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let memory = Memory::new();
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(1, instruction.num_bytes);
+            assert_eq!(8, instruction.clock_ticks);
+            assert_eq!(
+                Operation::RET {
+                    target: CondJumpTarget::Z,
+                    jump: false,
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
     fn test_cpu_decode_prefix() {
         let op_code: u8 = 0xCB;
 
@@ -5810,6 +5916,84 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(4, instruction.clock_ticks);
         assert_eq!(Operation::PREFIX, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_ret_nc() {
+        let op_code: u8 = 0xD0;
+
+        {
+            let memory = Memory::new();
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(1, instruction.num_bytes);
+            assert_eq!(20, instruction.clock_ticks);
+            assert_eq!(
+                Operation::RET {
+                    target: CondJumpTarget::NC,
+                    jump: true,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.f.set_c(true);
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(1, instruction.num_bytes);
+            assert_eq!(8, instruction.clock_ticks);
+            assert_eq!(
+                Operation::RET {
+                    target: CondJumpTarget::NC,
+                    jump: false,
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
+    fn test_cpu_decode_ret_c() {
+        let op_code: u8 = 0xD8;
+
+        {
+            let memory = Memory::new();
+
+            let mut cpu = Cpu::new();
+            cpu.registers.f.set_c(true);
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(1, instruction.num_bytes);
+            assert_eq!(20, instruction.clock_ticks);
+            assert_eq!(
+                Operation::RET {
+                    target: CondJumpTarget::C,
+                    jump: true,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let memory = Memory::new();
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(1, instruction.num_bytes);
+            assert_eq!(8, instruction.clock_ticks);
+            assert_eq!(
+                Operation::RET {
+                    target: CondJumpTarget::C,
+                    jump: false,
+                },
+                instruction.operation
+            );
+        }
     }
 }
 
@@ -6157,4 +6341,12 @@ mod json_tests {
     test_instruction!(test_BD, "Bd.json", 0xBD);
     test_instruction!(test_BE, "Be.json", 0xBE);
     test_instruction!(test_BF, "Bf.json", 0xBF);
+
+    // 0xCx
+    test_instruction!(test_C0, "C0.json", 0xC0);
+    test_instruction!(test_C8, "C8.json", 0xC8);
+
+    // 0xDx
+    test_instruction!(test_D0, "D0.json", 0xD0);
+    test_instruction!(test_D8, "D8.json", 0xD8);
 }
