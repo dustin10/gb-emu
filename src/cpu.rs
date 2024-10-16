@@ -365,6 +365,12 @@ enum Operation {
     RR { target: Target },
     /// Bit rotate the [`Target`] register right by one, not through the carry flag.
     RRC { target: Target },
+    /// Subtracts the value in the [`Target8Bit`] register and the value of the carry flag from
+    /// the value in the `A` register and stores the result back to the `A` register.
+    SBCA { target: Target8Bit },
+    /// Subtracts the value at the memory address pointed to by the value in the `HL` register and the
+    /// carry flag from the value in the `A` register and stores the result back to the `A` register.
+    SBCAMEM,
     /// Sets the carry flag.
     SCF,
     /// Stops the system clock and stop mode is entered.
@@ -441,6 +447,8 @@ impl Display for Operation {
                 Target::A => f.write_str("RRCA"),
                 _ => f.write_fmt(format_args!("RRC {}", target)),
             },
+            Operation::SBCA { target } => f.write_fmt(format_args!("SBC A, {}", target)),
+            Operation::SBCAMEM => f.write_str("SBC A, [HL]"),
             Operation::SCF => f.write_str("SCF"),
             Operation::STOP => f.write_str("STOP"),
             Operation::SUBA { target } => f.write_fmt(format_args!("SUB A, {}", target)),
@@ -675,6 +683,18 @@ impl Instruction {
     /// through the carry flag.
     fn rrca() -> Self {
         Self::rrc(Target::A)
+    }
+    /// Creates a new instruction that subtracts the value in the [`Target8Bit`] register and
+    /// the value of the carry flag from the value in the `A` register and stores the result
+    /// back to the `A` register.
+    fn sbc_a(target: Target8Bit) -> Self {
+        Self::new(1, 4, Operation::SBCA { target })
+    }
+    /// Creates a new instruction that subtracts the value at the memory address pointed to by the
+    /// value in the `HL` register and the carry flag from the value in the `A` register and stores
+    /// the result back to the `A` register.
+    fn sbc_a_mem() -> Self {
+        Self::new(1, 8, Operation::SBCAMEM)
     }
     /// Creates a new stop instruction that sets the carry flag.
     fn scf() -> Self {
@@ -1020,6 +1040,14 @@ impl Cpu {
             0x95 => Some(Instruction::sub_a(Target8Bit::L)),
             0x96 => Some(Instruction::sub_a_mem()),
             0x97 => Some(Instruction::sub_a(Target8Bit::A)),
+            0x98 => Some(Instruction::sbc_a(Target8Bit::B)),
+            0x99 => Some(Instruction::sbc_a(Target8Bit::C)),
+            0x9A => Some(Instruction::sbc_a(Target8Bit::D)),
+            0x9B => Some(Instruction::sbc_a(Target8Bit::E)),
+            0x9C => Some(Instruction::sbc_a(Target8Bit::H)),
+            0x9D => Some(Instruction::sbc_a(Target8Bit::L)),
+            0x9E => Some(Instruction::sbc_a_mem()),
+            0x9F => Some(Instruction::sbc_a(Target8Bit::A)),
 
             // 0xCx
             0xCB => Some(Instruction::prefix()),
@@ -1052,11 +1080,11 @@ impl Cpu {
                     Target8Bit::L => self.registers.l,
                 };
 
-                let carry_value = if self.registers.f.c() { 1 } else { 0 };
+                let carry_value = self.registers.f.c() as u8;
 
-                let (to_add, overflowed_intermediate) = target_value.overflowing_add(carry_value);
-
-                let (new_value, overflowed) = a.overflowing_add(to_add);
+                let (intermediate, overflowed_intermediate) =
+                    target_value.overflowing_add(carry_value);
+                let (new_value, overflowed) = a.overflowing_add(intermediate);
 
                 self.registers.a = new_value;
 
@@ -1075,11 +1103,11 @@ impl Cpu {
 
                 let mem_value = memory.read_u8(hl);
 
-                let carry_value = if self.registers.f.c() { 1 } else { 0 };
+                let carry_value = self.registers.f.c() as u8;
 
-                let (to_add, overflowed_intermediate) = mem_value.overflowing_add(carry_value);
-
-                let (new_value, overflowed) = a.overflowing_add(to_add);
+                let (intermediate, overflowed_intermediate) =
+                    mem_value.overflowing_add(carry_value);
+                let (new_value, overflowed) = a.overflowing_add(intermediate);
 
                 self.registers.a = new_value;
 
@@ -1543,6 +1571,58 @@ impl Cpu {
                 self.registers.f.set_n(false);
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(will_carry);
+            }
+            Operation::SBCA { target } => {
+                let a = self.registers.a;
+
+                let target_value = match target {
+                    Target8Bit::A => self.registers.a,
+                    Target8Bit::B => self.registers.b,
+                    Target8Bit::C => self.registers.c,
+                    Target8Bit::D => self.registers.d,
+                    Target8Bit::E => self.registers.e,
+                    Target8Bit::H => self.registers.h,
+                    Target8Bit::L => self.registers.l,
+                };
+
+                let carry_value = self.registers.f.c() as u8;
+
+                let (intermediate, overflowed_intermediate) = a.overflowing_sub(target_value);
+                let (new_value, overflowed) = intermediate.overflowing_sub(carry_value);
+
+                self.registers.a = new_value;
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(true);
+                self.registers.f.set_h(
+                    (((a & 0x0F) as i32) - ((target_value & 0x0F) as i32) - (carry_value as i32))
+                        < 0,
+                );
+                self.registers
+                    .f
+                    .set_c(overflowed || overflowed_intermediate);
+            }
+            Operation::SBCAMEM => {
+                let a = self.registers.a;
+                let hl = self.registers.hl();
+
+                let mem_value = memory.read_u8(hl);
+
+                let carry_value = self.registers.f.c() as u8;
+
+                let (intermediate, overflowed_intermediate) = a.overflowing_sub(mem_value);
+                let (new_value, overflowed) = intermediate.overflowing_sub(carry_value);
+
+                self.registers.a = new_value;
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(true);
+                self.registers.f.set_h(
+                    (((a & 0x0F) as i32) - ((mem_value & 0x0F) as i32) - (carry_value as i32)) < 0,
+                );
+                self.registers
+                    .f
+                    .set_c(overflowed || overflowed_intermediate);
             }
             Operation::SCF => {
                 self.registers.f.set_n(false);
@@ -4736,6 +4816,153 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_sbc_a_b() {
+        let op_code: u8 = 0x98;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SBCA {
+                target: Target8Bit::B,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_sbc_a_c() {
+        let op_code: u8 = 0x99;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SBCA {
+                target: Target8Bit::C,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_sbc_a_d() {
+        let op_code: u8 = 0x9A;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SBCA {
+                target: Target8Bit::D,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_sbc_a_e() {
+        let op_code: u8 = 0x9B;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SBCA {
+                target: Target8Bit::E,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_sbc_a_h() {
+        let op_code: u8 = 0x9C;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SBCA {
+                target: Target8Bit::H,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_sbc_a_l() {
+        let op_code: u8 = 0x9D;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SBCA {
+                target: Target8Bit::L,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_sbc_a_mem() {
+        let op_code: u8 = 0x9E;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::SBCAMEM, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_sbc_a_a() {
+        let op_code: u8 = 0x9F;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SBCA {
+                target: Target8Bit::A,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
     fn test_cpu_decode_prefix() {
         let op_code: u8 = 0xCB;
 
@@ -5050,4 +5277,12 @@ mod json_tests {
     test_instruction!(test_95, "95.json", 0x95);
     test_instruction!(test_96, "96.json", 0x96);
     test_instruction!(test_97, "97.json", 0x97);
+    test_instruction!(test_98, "98.json", 0x98);
+    test_instruction!(test_99, "99.json", 0x99);
+    test_instruction!(test_9A, "9a.json", 0x9A);
+    test_instruction!(test_9B, "9b.json", 0x9B);
+    test_instruction!(test_9C, "9c.json", 0x9C);
+    test_instruction!(test_9D, "9d.json", 0x9D);
+    test_instruction!(test_9E, "9e.json", 0x9E);
+    test_instruction!(test_9F, "9f.json", 0x9F);
 }
