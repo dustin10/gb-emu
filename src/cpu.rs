@@ -1,7 +1,7 @@
 use crate::mem::Memory;
 
 use bounded_vec_deque::BoundedVecDeque;
-use std::{collections::VecDeque, fmt::Display};
+use std::fmt::Display;
 
 /// Represents the registers on the cpu. Allows for easy manipulation of combined 16-bit registers as well.
 #[derive(Clone, Debug, Default)]
@@ -29,40 +29,40 @@ struct Registers {
 }
 
 impl Registers {
-    /// Returns the combined value of the a and f registers.
+    /// Returns the combined value of the `A` and `F` registers.
     fn af(&self) -> u16 {
         let f: u8 = self.f.into();
 
         (self.a as u16) << 8 | f as u16
     }
-    /// Sets the values of the a and f registers by treating them as one 16 byte value.
+    /// Sets the values of the `A` and `F` registers by treating them as one 16 bit value.
     fn set_af(&mut self, value: u16) {
         self.a = ((value & 0xFF00) >> 8) as u8;
         self.f = ((value & 0xFF) as u8).into();
     }
-    /// Returns the combined value of the b and c registers.
+    /// Returns the combined value of the `B` and `C` registers.
     fn bc(&self) -> u16 {
         (self.b as u16) << 8 | self.c as u16
     }
-    /// Sets the values of the b and c registers by treating them as one 16 byte value.
+    /// Sets the values of the `B` and `C` registers by treating them as one 16 bit value.
     fn set_bc(&mut self, value: u16) {
         self.b = ((value & 0xFF00) >> 8) as u8;
         self.c = (value & 0xFF) as u8;
     }
-    /// Returns the combined value of the d and e registers.
+    /// Returns the combined value of the `D` and `E` registers.
     fn de(&self) -> u16 {
         (self.d as u16) << 8 | self.e as u16
     }
-    /// Sets the values of the d and e registers by treating them as one 16 byte value.
+    /// Sets the values of the `D` and `E` registers by treating them as one 16 bit value.
     fn set_de(&mut self, value: u16) {
         self.d = ((value & 0xFF00) >> 8) as u8;
         self.e = (value & 0xFF) as u8;
     }
-    /// Returns the combined value of the h and l registers.
+    /// Returns the combined value of the `H` and `L` registers.
     fn hl(&self) -> u16 {
         (self.h as u16) << 8 | self.l as u16
     }
-    /// Sets the values of the h and l registers by treating them as one 16 byte value.
+    /// Sets the values of the `H` and `L` registers by treating them as one 16 bit value.
     fn set_hl(&mut self, value: u16) {
         self.h = ((value & 0xFF00) >> 8) as u8;
         self.l = (value & 0xFF) as u8;
@@ -146,7 +146,7 @@ impl Flags {
 impl From<u8> for Flags {
     /// Converts the given [`u8`] into a [`Flags`].
     fn from(value: u8) -> Self {
-        Self(value)
+        Self(value & 0xF0)
     }
 }
 
@@ -256,6 +256,27 @@ enum Target16Bit {
 
 impl Display for Target16Bit {
     /// Writes a string representation of the [`Target16Bit`] to the formatter.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:?}", self))
+    }
+}
+
+/// Enumeration of the valid target registers for the `PUSH` and `POP` instructions.
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PushPopTarget {
+    /// Combined BC register.
+    BC,
+    /// Combined DE register.
+    DE,
+    /// Combined HL register.
+    HL,
+    /// Combined AF register.
+    AF,
+}
+
+impl Display for PushPopTarget {
+    /// Writes a string representation of the [`PushPopTarget`] to the formatter.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{:?}", self))
     }
@@ -377,6 +398,8 @@ enum Operation {
     /// [`HL`] register and the contents of the `A` register and stores the result back to the `A`
     /// register.
     ORAMEM,
+    /// Pops the contents from the memory stack into the [`PushPopTarget`] register.
+    POP { target: PushPopTarget },
     /// Prefix op code which causes the subsequent byte to represent a different set of
     /// instructions.
     PREFIX,
@@ -469,6 +492,7 @@ impl Display for Operation {
             Operation::NOP => f.write_str("NOP"),
             Operation::ORA { target } => f.write_fmt(format_args!("OR A, {}", target)),
             Operation::ORAMEM => f.write_str("OR A, [HL]"),
+            Operation::POP { target } => f.write_fmt(format_args!("POP {}", target)),
             Operation::PREFIX => f.write_str("PREFIX"),
             Operation::RET { target, .. } => f.write_fmt(format_args!("RET {}", target)),
             Operation::RL { target } => match target {
@@ -718,6 +742,11 @@ impl Instruction {
     /// and stores the result back to the `A` register.
     fn or_a_mem() -> Self {
         Self::new(1, 8, Operation::ORAMEM)
+    }
+    /// Creates a new instruction that pops the contents from the memory stack into the
+    /// [`PushPopTarget`] register.
+    fn pop(target: PushPopTarget) -> Self {
+        Self::new(1, 12, Operation::POP { target })
     }
     /// Creates a new prefix instruction.
     fn prefix() -> Self {
@@ -1186,12 +1215,20 @@ impl Cpu {
 
             // 0xCx
             0xC0 => Some(Instruction::ret(CondJumpTarget::NZ, !self.registers.f.z())),
+            0xC1 => Some(Instruction::pop(PushPopTarget::BC)),
             0xC8 => Some(Instruction::ret(CondJumpTarget::Z, self.registers.f.z())),
             0xCB => Some(Instruction::prefix()),
 
             // 0xDx
             0xD0 => Some(Instruction::ret(CondJumpTarget::NC, !self.registers.f.c())),
+            0xD1 => Some(Instruction::pop(PushPopTarget::DE)),
             0xD8 => Some(Instruction::ret(CondJumpTarget::C, self.registers.f.c())),
+
+            // 0xEx
+            0xE1 => Some(Instruction::pop(PushPopTarget::HL)),
+
+            // 0xFx
+            0xF1 => Some(Instruction::pop(PushPopTarget::AF)),
 
             _ => None,
         }
@@ -1739,13 +1776,28 @@ impl Cpu {
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(false);
             }
+            Operation::POP { target } => {
+                let low = memory.read_u8(self.registers.sp) as u16;
+                self.registers.sp = self.registers.sp.wrapping_add(1);
+                let high = memory.read_u8(self.registers.sp) as u16;
+                self.registers.sp = self.registers.sp.wrapping_add(1);
+
+                let new_value = (high << 8) | low;
+
+                match target {
+                    PushPopTarget::BC => self.registers.set_bc(new_value),
+                    PushPopTarget::DE => self.registers.set_de(new_value),
+                    PushPopTarget::HL => self.registers.set_hl(new_value),
+                    PushPopTarget::AF => self.registers.set_af(new_value),
+                }
+            }
             Operation::PREFIX => {}
             Operation::RET { jump, .. } => {
                 if jump {
                     let low = memory.read_u8(self.registers.sp) as u16;
-                    self.registers.sp += 1;
+                    self.registers.sp = self.registers.sp.wrapping_add(1);
                     let high = memory.read_u8(self.registers.sp) as u16;
-                    self.registers.sp += 1;
+                    self.registers.sp = self.registers.sp.wrapping_add(1);
 
                     self.registers.pc = (high << 8) | low;
                 }
@@ -2007,12 +2059,10 @@ mod tests {
         let mut flags = Flags::new();
         assert!(!flags.n());
 
-        println!("flags: {:#4x}", flags.0);
         flags.set_n(true);
         assert!(flags.n());
         assert_eq!(flags.0, 1 << FLAGS_SUBTRACT_BIT_POSITION);
 
-        println!("flags: {:#4x}", flags.0);
         flags.set_n(false);
         assert!(!flags.n());
     }
@@ -5866,6 +5916,25 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_pop_bc() {
+        let op_code: u8 = 0xC1;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(12, instruction.clock_ticks);
+        assert_eq!(
+            Operation::POP {
+                target: PushPopTarget::BC,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
     fn test_cpu_decode_ret_z() {
         let op_code: u8 = 0xC8;
 
@@ -5958,6 +6027,25 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_pop_de() {
+        let op_code: u8 = 0xD1;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(12, instruction.clock_ticks);
+        assert_eq!(
+            Operation::POP {
+                target: PushPopTarget::DE,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
     fn test_cpu_decode_ret_c() {
         let op_code: u8 = 0xD8;
 
@@ -5994,6 +6082,44 @@ mod tests {
                 instruction.operation
             );
         }
+    }
+
+    #[test]
+    fn test_cpu_decode_pop_hl() {
+        let op_code: u8 = 0xE1;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(12, instruction.clock_ticks);
+        assert_eq!(
+            Operation::POP {
+                target: PushPopTarget::HL,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_pop_af() {
+        let op_code: u8 = 0xF1;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(12, instruction.clock_ticks);
+        assert_eq!(
+            Operation::POP {
+                target: PushPopTarget::AF,
+            },
+            instruction.operation
+        );
     }
 }
 
@@ -6089,6 +6215,8 @@ mod json_tests {
 
         cpu.step(&mut memory);
 
+        let f_value: u8 = cpu.registers.f.into();
+
         assert_eq!(test.output.pc, cpu.registers.pc);
         assert_eq!(test.output.sp, cpu.registers.sp);
         assert_eq!(test.output.a, cpu.registers.a);
@@ -6096,7 +6224,7 @@ mod json_tests {
         assert_eq!(test.output.c, cpu.registers.c);
         assert_eq!(test.output.d, cpu.registers.d);
         assert_eq!(test.output.e, cpu.registers.e);
-        assert_eq!(test.output.f, <Flags as Into<u8>>::into(cpu.registers.f));
+        assert_eq!(test.output.f, f_value);
         assert_eq!(test.output.h, cpu.registers.h);
         assert_eq!(test.output.l, cpu.registers.l);
 
@@ -6344,9 +6472,17 @@ mod json_tests {
 
     // 0xCx
     test_instruction!(test_C0, "C0.json", 0xC0);
+    test_instruction!(test_C1, "C1.json", 0xC1);
     test_instruction!(test_C8, "C8.json", 0xC8);
 
     // 0xDx
     test_instruction!(test_D0, "D0.json", 0xD0);
+    test_instruction!(test_D1, "D1.json", 0xD1);
     test_instruction!(test_D8, "D8.json", 0xD8);
+
+    // 0xEx
+    test_instruction!(test_E1, "E1.json", 0xE1);
+
+    // 0xFx
+    test_instruction!(test_F1, "F1.json", 0xF1);
 }
