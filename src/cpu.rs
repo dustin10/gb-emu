@@ -369,6 +369,12 @@ enum Operation {
     SCF,
     /// Stops the system clock and stop mode is entered.
     STOP,
+    /// Subtracts the value in the [`Target8Bit`] register from the value in the `A` register
+    /// and stores the result back to the `A` register.
+    SUBA { target: Target8Bit },
+    /// Subtracts the value at the memory address pointed to by the value in the `HL` register
+    /// from the value in the `A` register and stores the result back to the `A` register.
+    SUBAMEM,
 }
 
 impl Display for Operation {
@@ -437,6 +443,8 @@ impl Display for Operation {
             },
             Operation::SCF => f.write_str("SCF"),
             Operation::STOP => f.write_str("STOP"),
+            Operation::SUBA { target } => f.write_fmt(format_args!("SUB A, {}", target)),
+            Operation::SUBAMEM => f.write_str("SUB A, [HL]"),
         }
     }
 }
@@ -675,6 +683,17 @@ impl Instruction {
     /// Creates a new stop instruction that is akin to [`Operation::NOP`] for the emulator.
     fn stop() -> Self {
         Self::new(1, 4, Operation::STOP)
+    }
+    /// Creates a new instruction that subtracts the value in the [`Target8Bit`] register from
+    /// the value in the HL register and stores it back to the HL register.
+    fn sub_a(target: Target8Bit) -> Self {
+        Self::new(1, 4, Operation::SUBA { target })
+    }
+    /// Creates a new instruction that subtracts the value at the memory address pointed to by the
+    /// value in the `HL` register from the value in the `A` register and stores the result back to
+    /// the `A` register.
+    fn sub_a_mem() -> Self {
+        Self::new(1, 8, Operation::SUBAMEM)
     }
 }
 
@@ -991,6 +1010,16 @@ impl Cpu {
             0x8D => Some(Instruction::adc_a(Target8Bit::L)),
             0x8E => Some(Instruction::adc_a_mem()),
             0x8F => Some(Instruction::adc_a(Target8Bit::A)),
+
+            // 0x9x
+            0x90 => Some(Instruction::sub_a(Target8Bit::B)),
+            0x91 => Some(Instruction::sub_a(Target8Bit::C)),
+            0x92 => Some(Instruction::sub_a(Target8Bit::D)),
+            0x93 => Some(Instruction::sub_a(Target8Bit::E)),
+            0x94 => Some(Instruction::sub_a(Target8Bit::H)),
+            0x95 => Some(Instruction::sub_a(Target8Bit::L)),
+            0x96 => Some(Instruction::sub_a_mem()),
+            0x97 => Some(Instruction::sub_a(Target8Bit::A)),
 
             // 0xCx
             0xCB => Some(Instruction::prefix()),
@@ -1521,6 +1550,45 @@ impl Cpu {
                 self.registers.f.set_c(true);
             }
             Operation::STOP => tracing::debug!("ignore stop instruction"),
+            Operation::SUBA { target } => {
+                let a = self.registers.a;
+
+                let target_value = match target {
+                    Target8Bit::A => self.registers.a,
+                    Target8Bit::B => self.registers.b,
+                    Target8Bit::C => self.registers.c,
+                    Target8Bit::D => self.registers.d,
+                    Target8Bit::E => self.registers.e,
+                    Target8Bit::H => self.registers.h,
+                    Target8Bit::L => self.registers.l,
+                };
+
+                let (new_value, overflowed) = a.overflowing_sub(target_value);
+
+                self.registers.a = new_value;
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(true);
+                self.registers
+                    .f
+                    .set_h(will_half_carry_sub_u8(a, target_value));
+                self.registers.f.set_c(overflowed);
+            }
+            Operation::SUBAMEM => {
+                let a = self.registers.a;
+                let hl = self.registers.hl();
+
+                let mem_value = memory.read_u8(hl);
+
+                let (new_value, overflowed) = a.overflowing_sub(mem_value);
+
+                self.registers.a = new_value;
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(true);
+                self.registers.f.set_h(will_half_carry_sub_u8(a, mem_value));
+                self.registers.f.set_c(overflowed);
+            }
             _ => todo!(),
         }
     }
@@ -4521,6 +4589,153 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_sub_a_b() {
+        let op_code: u8 = 0x90;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SUBA {
+                target: Target8Bit::B,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_sub_a_c() {
+        let op_code: u8 = 0x91;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SUBA {
+                target: Target8Bit::C,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_sub_a_d() {
+        let op_code: u8 = 0x92;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SUBA {
+                target: Target8Bit::D,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_sub_a_e() {
+        let op_code: u8 = 0x93;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SUBA {
+                target: Target8Bit::E,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_sub_a_h() {
+        let op_code: u8 = 0x94;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SUBA {
+                target: Target8Bit::H,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_sub_a_l() {
+        let op_code: u8 = 0x95;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SUBA {
+                target: Target8Bit::L,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_sub_a_mem() {
+        let op_code: u8 = 0x96;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::SUBAMEM, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_sub_a_a() {
+        let op_code: u8 = 0x97;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SUBA {
+                target: Target8Bit::A,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
     fn test_cpu_decode_prefix() {
         let op_code: u8 = 0xCB;
 
@@ -4825,4 +5040,14 @@ mod json_tests {
     test_instruction!(test_8D, "8d.json", 0x8D);
     test_instruction!(test_8E, "8e.json", 0x8E);
     test_instruction!(test_8F, "8f.json", 0x8F);
+
+    // 0x9x
+    test_instruction!(test_90, "90.json", 0x90);
+    test_instruction!(test_91, "91.json", 0x91);
+    test_instruction!(test_92, "92.json", 0x92);
+    test_instruction!(test_93, "93.json", 0x93);
+    test_instruction!(test_94, "94.json", 0x94);
+    test_instruction!(test_95, "95.json", 0x95);
+    test_instruction!(test_96, "96.json", 0x96);
+    test_instruction!(test_97, "97.json", 0x97);
 }
