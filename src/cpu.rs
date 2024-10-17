@@ -436,6 +436,9 @@ enum Operation {
     RR { target: Target },
     /// Bit rotate the [`Target`] register right by one, not through the carry flag.
     RRC { target: Target },
+    /// Pushes the current value of the program counter PC onto the memory stack, and load into PC the
+    /// byte defined by the value of page 0 memory addresses.
+    RST { value: u8 },
     /// Subtracts the value in the [`Target8Bit`] register and the value of the carry flag from
     /// the value in the `A` register and stores the result back to the `A` register.
     SBCA { target: Target8Bit },
@@ -543,6 +546,7 @@ impl Display for Operation {
                 Target::A => f.write_str("RRCA"),
                 _ => f.write_fmt(format_args!("RRC {}", target)),
             },
+            Operation::RST { value } => f.write_fmt(format_args!("RST {:#4x}", value)),
             Operation::SBCA { target } => f.write_fmt(format_args!("SBC A, {}", target)),
             Operation::SBCAMEM => f.write_str("SBC A, [HL]"),
             Operation::SCF => f.write_str("SCF"),
@@ -881,6 +885,11 @@ impl Instruction {
     /// through the carry flag.
     fn rrca() -> Self {
         Self::rrc(Target::A)
+    }
+    /// Creates a new instruction that pushes the current value of the program counter PC onto the
+    /// memory stack, and load into PC the byte defined by the value of page 0 memory addresses.
+    fn rst(value: u8) -> Self {
+        Self::new(1, 16, Operation::RST { value })
     }
     /// Creates a new instruction that subtracts the value in the [`Target8Bit`] register and
     /// the value of the carry flag from the value in the `A` register and stores the result
@@ -1312,6 +1321,7 @@ impl Cpu {
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
             0xC5 => Some(Instruction::push(PushPopTarget::BC)),
+            0xC7 => Some(Instruction::rst(0x00)),
             0xC8 => Some(Instruction::ret(CondJumpTarget::Z, self.registers.f.z())),
             0xCA => Some(Instruction::jpc(
                 CondJumpTarget::Z,
@@ -1327,6 +1337,7 @@ impl Cpu {
             0xCD => Some(Instruction::call(
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
+            0xCF => Some(Instruction::rst(0x08)),
 
             // 0xDx
             0xD0 => Some(Instruction::ret(CondJumpTarget::NC, !self.registers.f.c())),
@@ -1342,6 +1353,7 @@ impl Cpu {
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
             0xD5 => Some(Instruction::push(PushPopTarget::DE)),
+            0xD7 => Some(Instruction::rst(0x10)),
             0xD8 => Some(Instruction::ret(CondJumpTarget::C, self.registers.f.c())),
             0xDA => Some(Instruction::jpc(
                 CondJumpTarget::C,
@@ -1353,15 +1365,20 @@ impl Cpu {
                 self.registers.f.c(),
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
+            0xDF => Some(Instruction::rst(0x18)),
 
             // 0xEx
             0xE1 => Some(Instruction::pop(PushPopTarget::HL)),
             0xE5 => Some(Instruction::push(PushPopTarget::HL)),
+            0xE7 => Some(Instruction::rst(0x20)),
             0xE9 => Some(Instruction::jp_hl()),
+            0xEF => Some(Instruction::rst(0x28)),
 
             // 0xFx
             0xF1 => Some(Instruction::pop(PushPopTarget::AF)),
             0xF5 => Some(Instruction::push(PushPopTarget::AF)),
+            0xF7 => Some(Instruction::rst(0x30)),
+            0xFF => Some(Instruction::rst(0x38)),
 
             _ => None,
         }
@@ -2047,6 +2064,17 @@ impl Cpu {
                 self.registers.f.set_n(false);
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(will_carry);
+            }
+            Operation::RST { value } => {
+                let pc = self.registers.pc;
+
+                self.registers.sp = self.registers.sp.wrapping_sub(1);
+                memory.write_u8(self.registers.sp, (pc >> 8) as u8);
+
+                self.registers.sp = self.registers.sp.wrapping_sub(1);
+                memory.write_u8(self.registers.sp, pc as u8);
+
+                self.registers.pc = value as u16;
             }
             Operation::SBCA { target } => {
                 let a = self.registers.a;
@@ -6219,6 +6247,39 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_push_bc() {
+        let op_code: u8 = 0xC5;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(
+            Operation::PUSH {
+                target: PushPopTarget::BC,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_rst_0x00() {
+        let op_code: u8 = 0xC7;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RST { value: 0x00 }, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_ret_z() {
         let op_code: u8 = 0xC8;
 
@@ -6378,6 +6439,20 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_rst_0x08() {
+        let op_code: u8 = 0xCF;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RST { value: 0x08 }, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_ret_nc() {
         let op_code: u8 = 0xD0;
 
@@ -6526,6 +6601,39 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_push_de() {
+        let op_code: u8 = 0xD5;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(
+            Operation::PUSH {
+                target: PushPopTarget::DE,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_rst_0x10() {
+        let op_code: u8 = 0xD7;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RST { value: 0x10 }, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_ret_c() {
         let op_code: u8 = 0xD8;
 
@@ -6655,6 +6763,20 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_rst_0x18() {
+        let op_code: u8 = 0xDF;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RST { value: 0x18 }, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_pop_hl() {
         let op_code: u8 = 0xE1;
 
@@ -6674,6 +6796,39 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_push_hl() {
+        let op_code: u8 = 0xE5;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(
+            Operation::PUSH {
+                target: PushPopTarget::HL,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_rst_0x20() {
+        let op_code: u8 = 0xE7;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RST { value: 0x20 }, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_jp_hl() {
         let op_code: u8 = 0xE9;
 
@@ -6685,6 +6840,20 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(4, instruction.clock_ticks);
         assert_eq!(Operation::JPHL, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_rst_0x28() {
+        let op_code: u8 = 0xEF;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RST { value: 0x28 }, instruction.operation);
     }
 
     #[test]
@@ -6704,6 +6873,53 @@ mod tests {
             },
             instruction.operation
         );
+    }
+
+    #[test]
+    fn test_cpu_decode_push_af() {
+        let op_code: u8 = 0xF5;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(
+            Operation::PUSH {
+                target: PushPopTarget::AF,
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_rst_0x30() {
+        let op_code: u8 = 0xF7;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RST { value: 0x30 }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_rst_0x38() {
+        let op_code: u8 = 0xFF;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RST { value: 0x38 }, instruction.operation);
     }
 }
 
@@ -7061,10 +7277,12 @@ mod json_tests {
     test_instruction!(test_C3, "c3.json", 0xC3);
     test_instruction!(test_C4, "c4.json", 0xC4);
     test_instruction!(test_C5, "c5.json", 0xC5);
+    test_instruction!(test_C7, "c7.json", 0xC7);
     test_instruction!(test_C8, "c8.json", 0xC8);
     test_instruction!(test_CA, "ca.json", 0xCA);
     test_instruction!(test_CC, "cc.json", 0xCC);
     test_instruction!(test_CD, "cd.json", 0xCD);
+    test_instruction!(test_CF, "cf.json", 0xCF);
 
     // 0xDx
     test_instruction!(test_D0, "d0.json", 0xD0);
@@ -7072,16 +7290,22 @@ mod json_tests {
     test_instruction!(test_D2, "d2.json", 0xD2);
     test_instruction!(test_D4, "d4.json", 0xD4);
     test_instruction!(test_D5, "d5.json", 0xD5);
+    test_instruction!(test_D7, "d7.json", 0xD7);
     test_instruction!(test_D8, "d8.json", 0xD8);
     test_instruction!(test_DA, "da.json", 0xDA);
     test_instruction!(test_DC, "dc.json", 0xDC);
+    test_instruction!(test_DF, "df.json", 0xDF);
 
     // 0xEx
     test_instruction!(test_E1, "e1.json", 0xE1);
     test_instruction!(test_E5, "e5.json", 0xE5);
+    test_instruction!(test_E7, "e7.json", 0xE7);
     test_instruction!(test_E9, "e9.json", 0xE9);
+    test_instruction!(test_EF, "ef.json", 0xEF);
 
     // 0xFx
     test_instruction!(test_F1, "f1.json", 0xF1);
     test_instruction!(test_F5, "f5.json", 0xF5);
+    test_instruction!(test_F7, "f7.json", 0xF7);
+    test_instruction!(test_FF, "ff.json", 0xFF);
 }
