@@ -333,6 +333,13 @@ enum Operation {
     INC { target: Target },
     /// Increments the value at the memory address specified by value of the `HL` register by 1.
     INCMEM,
+    /// Conditionally jumps to a memory address by setting the program counter to the value based
+    /// on the state of the [`CondJumpTarget`].
+    JPC {
+        target: CondJumpTarget,
+        jump: bool,
+        value: u16,
+    },
     /// Jumps to a relative memory address by advancing the program counter by the offset.
     JR { offset: i8 },
     /// Conditionally jumps to a relative memory address by advancing the program counter by the
@@ -460,6 +467,9 @@ impl Display for Operation {
             Operation::HALT => f.write_str("HALT"),
             Operation::INC { target } => f.write_fmt(format_args!("INC {}", target)),
             Operation::INCMEM => f.write_str("INC [HL]"),
+            Operation::JPC { target, value, .. } => {
+                f.write_fmt(format_args!("JP {}, {:#4x}", target, value))
+            }
             Operation::JR { offset } => f.write_fmt(format_args!("JR {:#4x}", offset)),
             Operation::JRC { target, offset, .. } => {
                 f.write_fmt(format_args!("JR {}, {:#4x}", target, offset))
@@ -643,11 +653,27 @@ impl Instruction {
     fn inc_u16(target: Target) -> Self {
         Self::new(1, 8, Operation::INC { target })
     }
+    /// Creates a new instruction that conditionally jumps to a memory address by setting the
+    /// program counter to the value based on the state of the [`CondJumpTarget`].
+    fn jpc(target: CondJumpTarget, jump: bool, value: u16) -> Self {
+        let t = if jump { 16 } else { 12 };
+        Self::new(
+            3,
+            t,
+            Operation::JPC {
+                target,
+                jump,
+                value,
+            },
+        )
+    }
     /// Creates a new jump relative instruction that advances the program counter by the given
     /// offset.
     fn jr(offset: i8) -> Self {
         Self::new(2, 12, Operation::JR { offset })
     }
+    /// Creates a new instruction that conditionally jumps to a relative memory address by advancing
+    /// the program counter by the offset based on the state of the [`CondJumpTarget`].
     fn jrc(target: CondJumpTarget, jump: bool, offset: i8) -> Self {
         let t = if jump { 12 } else { 8 };
         Self::new(
@@ -1216,13 +1242,33 @@ impl Cpu {
             // 0xCx
             0xC0 => Some(Instruction::ret(CondJumpTarget::NZ, !self.registers.f.z())),
             0xC1 => Some(Instruction::pop(PushPopTarget::BC)),
+            0xC2 => Some(Instruction::jpc(
+                CondJumpTarget::NZ,
+                !self.registers.f.z(),
+                memory.read_u16(self.registers.pc.wrapping_add(1)),
+            )),
             0xC8 => Some(Instruction::ret(CondJumpTarget::Z, self.registers.f.z())),
+            0xCA => Some(Instruction::jpc(
+                CondJumpTarget::Z,
+                self.registers.f.z(),
+                memory.read_u16(self.registers.pc.wrapping_add(1)),
+            )),
             0xCB => Some(Instruction::prefix()),
 
             // 0xDx
             0xD0 => Some(Instruction::ret(CondJumpTarget::NC, !self.registers.f.c())),
             0xD1 => Some(Instruction::pop(PushPopTarget::DE)),
+            0xD2 => Some(Instruction::jpc(
+                CondJumpTarget::NC,
+                !self.registers.f.c(),
+                memory.read_u16(self.registers.pc.wrapping_add(1)),
+            )),
             0xD8 => Some(Instruction::ret(CondJumpTarget::C, self.registers.f.c())),
+            0xDA => Some(Instruction::jpc(
+                CondJumpTarget::C,
+                self.registers.f.c(),
+                memory.read_u16(self.registers.pc.wrapping_add(1)),
+            )),
 
             // 0xEx
             0xE1 => Some(Instruction::pop(PushPopTarget::HL)),
@@ -1615,6 +1661,11 @@ impl Cpu {
                 self.registers.f.set_z(new_value == 0);
                 self.registers.f.set_n(false);
                 self.registers.f.set_h(will_half_carry_add_u8(value, 1))
+            }
+            Operation::JPC { jump, value, .. } => {
+                if jump {
+                    self.registers.pc = value;
+                }
             }
             Operation::JR { offset } => {
                 self.registers.pc = self.registers.pc.wrapping_add_signed(offset.into());
@@ -5935,6 +5986,51 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_jp_nz() {
+        let op_code: u8 = 0xC2;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(16, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JPC {
+                    target: CondJumpTarget::NZ,
+                    jump: true,
+                    value: 1,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
+
+            let mut cpu = Cpu::new();
+            cpu.registers.f.set_z(true);
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JPC {
+                    target: CondJumpTarget::NZ,
+                    jump: false,
+                    value: 1,
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
     fn test_cpu_decode_ret_z() {
         let op_code: u8 = 0xC8;
 
@@ -5967,6 +6063,51 @@ mod tests {
                 Operation::RET {
                     target: CondJumpTarget::Z,
                     jump: false,
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
+    fn test_cpu_decode_jp_z() {
+        let op_code: u8 = 0xCA;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JPC {
+                    target: CondJumpTarget::Z,
+                    jump: false,
+                    value: 1,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
+
+            let mut cpu = Cpu::new();
+            cpu.registers.f.set_z(true);
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(16, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JPC {
+                    target: CondJumpTarget::Z,
+                    jump: true,
+                    value: 1,
                 },
                 instruction.operation
             );
@@ -6046,6 +6187,51 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_jp_nc() {
+        let op_code: u8 = 0xD2;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(16, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JPC {
+                    target: CondJumpTarget::NC,
+                    jump: true,
+                    value: 1,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
+
+            let mut cpu = Cpu::new();
+            cpu.registers.f.set_c(true);
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JPC {
+                    target: CondJumpTarget::NC,
+                    jump: false,
+                    value: 1,
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
     fn test_cpu_decode_ret_c() {
         let op_code: u8 = 0xD8;
 
@@ -6078,6 +6264,51 @@ mod tests {
                 Operation::RET {
                     target: CondJumpTarget::C,
                     jump: false,
+                },
+                instruction.operation
+            );
+        }
+    }
+
+    #[test]
+    fn test_cpu_decode_jp_c() {
+        let op_code: u8 = 0xDA;
+
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
+
+            let cpu = Cpu::new();
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(12, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JPC {
+                    target: CondJumpTarget::C,
+                    jump: false,
+                    value: 1,
+                },
+                instruction.operation
+            );
+        }
+        {
+            let mut memory = Memory::new();
+            memory.write_u8(0x0001, 1);
+            memory.write_u8(0x0002, 0);
+
+            let mut cpu = Cpu::new();
+            cpu.registers.f.set_c(true);
+
+            let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+            assert_eq!(3, instruction.num_bytes);
+            assert_eq!(16, instruction.clock_ticks);
+            assert_eq!(
+                Operation::JPC {
+                    target: CondJumpTarget::C,
+                    jump: true,
+                    value: 1,
                 },
                 instruction.operation
             );
@@ -6473,12 +6704,16 @@ mod json_tests {
     // 0xCx
     test_instruction!(test_C0, "C0.json", 0xC0);
     test_instruction!(test_C1, "C1.json", 0xC1);
+    test_instruction!(test_C2, "C2.json", 0xC2);
     test_instruction!(test_C8, "C8.json", 0xC8);
+    test_instruction!(test_CA, "Ca.json", 0xCA);
 
     // 0xDx
     test_instruction!(test_D0, "D0.json", 0xD0);
     test_instruction!(test_D1, "D1.json", 0xD1);
+    test_instruction!(test_D2, "D2.json", 0xD2);
     test_instruction!(test_D8, "D8.json", 0xD8);
+    test_instruction!(test_DA, "Da.json", 0xDA);
 
     // 0xEx
     test_instruction!(test_E1, "E1.json", 0xE1);
