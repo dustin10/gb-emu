@@ -298,6 +298,9 @@ enum Operation {
     /// Adds the value at the memory address pointed to by the value in the `HL` register to the
     /// value in the `A` register and stores the result back to the `A` register.
     ADDAMEM,
+    /// Adds the `u8` to the value in the `A` register and stores the result back into the `A`
+    /// register.
+    ADDAU8 { value: u8 },
     /// Adds the value in the [`Target16Bit`] register to the value in the HL register and stores it
     /// back to the HL register.
     ADDHL { target: Target16Bit },
@@ -472,6 +475,7 @@ impl Display for Operation {
             Operation::ADCAMEM => f.write_str("ADC A, [HL]"),
             Operation::ADDA { target } => f.write_fmt(format_args!("ADD A, {}", target)),
             Operation::ADDAMEM => f.write_str("ADD A, [HL]"),
+            Operation::ADDAU8 { value } => f.write_fmt(format_args!("ADD A, {:#4x}", value)),
             Operation::ADDHL { target } => f.write_fmt(format_args!("ADD HL, {}", target)),
             Operation::ANDA { target } => f.write_fmt(format_args!("AND A, {}", target)),
             Operation::ANDAMEM => f.write_str("AND A, [HL]"),
@@ -603,6 +607,11 @@ impl Instruction {
     /// to the `A` register.
     fn add_a_mem() -> Self {
         Self::new(1, 8, Operation::ADDAMEM)
+    }
+    /// Creates a new instruction that adds the `u8` to the value in the `A` register and stores
+    /// the result back into the `A` register.
+    fn add_a_u8(value: u8) -> Self {
+        Self::new(2, 8, Operation::ADDAU8 { value })
     }
     /// Creates a new instruction that adds the value in the [`Target16Bit`] register to the
     /// value in the `HL` register and stores the result back to the `HL` register.
@@ -1321,6 +1330,9 @@ impl Cpu {
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
             0xC5 => Some(Instruction::push(PushPopTarget::BC)),
+            0xC6 => Some(Instruction::add_a_u8(
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
+            )),
             0xC7 => Some(Instruction::rst(0x00)),
             0xC8 => Some(Instruction::ret(CondJumpTarget::Z, self.registers.f.z())),
             0xCA => Some(Instruction::jpc(
@@ -1485,6 +1497,18 @@ impl Cpu {
                 self.registers.f.set_z(new_value == 0);
                 self.registers.f.set_n(false);
                 self.registers.f.set_h(will_half_carry_add_u8(a, mem_value));
+                self.registers.f.set_c(overflowed);
+            }
+            Operation::ADDAU8 { value } => {
+                let a = self.registers.a;
+
+                let (new_value, overflowed) = a.overflowing_add(value);
+
+                self.registers.a = new_value;
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(will_half_carry_add_u8(a, value));
                 self.registers.f.set_c(overflowed);
             }
             Operation::ADDHL { target } => {
@@ -6266,6 +6290,21 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_add_a_u8() {
+        let op_code: u8 = 0xC6;
+
+        let mut memory = Memory::new();
+        memory.write_u8(1, 12);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::ADDAU8 { value: 12 }, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_rst_0x00() {
         let op_code: u8 = 0xC7;
 
@@ -7277,6 +7316,7 @@ mod json_tests {
     test_instruction!(test_C3, "c3.json", 0xC3);
     test_instruction!(test_C4, "c4.json", 0xC4);
     test_instruction!(test_C5, "c5.json", 0xC5);
+    test_instruction!(test_C6, "c6.json", 0xC6);
     test_instruction!(test_C7, "c7.json", 0xC7);
     test_instruction!(test_C8, "c8.json", 0xC8);
     test_instruction!(test_CA, "ca.json", 0xCA);
