@@ -333,6 +333,8 @@ enum Operation {
     INC { target: Target },
     /// Increments the value at the memory address specified by value of the `HL` register by 1.
     INCMEM,
+    /// Jumps to a memory address by setting the program counter to the value.
+    JP { value: u16 },
     /// Conditionally jumps to a memory address by setting the program counter to the value based
     /// on the state of the [`CondJumpTarget`].
     JPC {
@@ -340,6 +342,8 @@ enum Operation {
         jump: bool,
         value: u16,
     },
+    /// Jumps to a memory address by setting the program counter to the value.
+    JPHL,
     /// Jumps to a relative memory address by advancing the program counter by the offset.
     JR { offset: i8 },
     /// Conditionally jumps to a relative memory address by advancing the program counter by the
@@ -467,9 +471,11 @@ impl Display for Operation {
             Operation::HALT => f.write_str("HALT"),
             Operation::INC { target } => f.write_fmt(format_args!("INC {}", target)),
             Operation::INCMEM => f.write_str("INC [HL]"),
+            Operation::JP { value } => f.write_fmt(format_args!("JP {:#4x}", value)),
             Operation::JPC { target, value, .. } => {
                 f.write_fmt(format_args!("JP {}, {:#4x}", target, value))
             }
+            Operation::JPHL => f.write_str("JP HL"),
             Operation::JR { offset } => f.write_fmt(format_args!("JR {:#4x}", offset)),
             Operation::JRC { target, offset, .. } => {
                 f.write_fmt(format_args!("JR {}, {:#4x}", target, offset))
@@ -653,6 +659,11 @@ impl Instruction {
     fn inc_u16(target: Target) -> Self {
         Self::new(1, 8, Operation::INC { target })
     }
+    /// Creates a new instruction that jumps to a memory address by setting the program counter
+    /// to the value.
+    fn jp(value: u16) -> Self {
+        Self::new(3, 16, Operation::JP { value })
+    }
     /// Creates a new instruction that conditionally jumps to a memory address by setting the
     /// program counter to the value based on the state of the [`CondJumpTarget`].
     fn jpc(target: CondJumpTarget, jump: bool, value: u16) -> Self {
@@ -666,6 +677,11 @@ impl Instruction {
                 value,
             },
         )
+    }
+    /// Creates a new instruction that jumps to a memory address by setting the program counter
+    /// to the value.
+    fn jp_hl() -> Self {
+        Self::new(1, 4, Operation::JPHL)
     }
     /// Creates a new jump relative instruction that advances the program counter by the given
     /// offset.
@@ -1247,6 +1263,9 @@ impl Cpu {
                 !self.registers.f.z(),
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
+            0xC3 => Some(Instruction::jp(
+                memory.read_u16(self.registers.pc.wrapping_add(1)),
+            )),
             0xC8 => Some(Instruction::ret(CondJumpTarget::Z, self.registers.f.z())),
             0xCA => Some(Instruction::jpc(
                 CondJumpTarget::Z,
@@ -1272,6 +1291,7 @@ impl Cpu {
 
             // 0xEx
             0xE1 => Some(Instruction::pop(PushPopTarget::HL)),
+            0xE9 => Some(Instruction::jp_hl()),
 
             // 0xFx
             0xF1 => Some(Instruction::pop(PushPopTarget::AF)),
@@ -1662,11 +1682,13 @@ impl Cpu {
                 self.registers.f.set_n(false);
                 self.registers.f.set_h(will_half_carry_add_u8(value, 1))
             }
+            Operation::JP { value } => self.registers.pc = value,
             Operation::JPC { jump, value, .. } => {
                 if jump {
                     self.registers.pc = value;
                 }
             }
+            Operation::JPHL => self.registers.pc = self.registers.hl(),
             Operation::JR { offset } => {
                 self.registers.pc = self.registers.pc.wrapping_add_signed(offset.into());
             }
@@ -6031,6 +6053,22 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_jp() {
+        let op_code: u8 = 0xC3;
+
+        let mut memory = Memory::new();
+        memory.write_u8(0x0001, 1);
+        memory.write_u8(0x0002, 0);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(3, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::JP { value: 1 }, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_ret_z() {
         let op_code: u8 = 0xC8;
 
@@ -6332,6 +6370,20 @@ mod tests {
             },
             instruction.operation
         );
+    }
+
+    #[test]
+    fn test_cpu_decode_jp_hl() {
+        let op_code: u8 = 0xE9;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::JPHL, instruction.operation);
     }
 
     #[test]
@@ -6705,6 +6757,7 @@ mod json_tests {
     test_instruction!(test_C0, "C0.json", 0xC0);
     test_instruction!(test_C1, "C1.json", 0xC1);
     test_instruction!(test_C2, "C2.json", 0xC2);
+    test_instruction!(test_C3, "C3.json", 0xC3);
     test_instruction!(test_C8, "C8.json", 0xC8);
     test_instruction!(test_CA, "Ca.json", 0xCA);
 
@@ -6717,6 +6770,7 @@ mod json_tests {
 
     // 0xEx
     test_instruction!(test_E1, "E1.json", 0xE1);
+    test_instruction!(test_E9, "E9.json", 0xE9);
 
     // 0xFx
     test_instruction!(test_F1, "F1.json", 0xF1);
