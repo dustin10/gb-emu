@@ -292,6 +292,9 @@ enum Operation {
     /// Adds the value at the memory address pointed to by the value in the `HL` register and the
     /// carry flag to the value in the `A` register and stores the result back to the `A` register.
     ADCAMEM,
+    /// Adds the `u8` value and the value of the carry flag to the value in the `A` register and
+    /// stores the result back to the `A` register.
+    ADCAU8 { value: u8 },
     /// Adds the value in the [`Target8Bit`] register to the value in the `A` register and stores
     /// the result back to the `A` register.
     ADDA { target: Target8Bit },
@@ -473,6 +476,7 @@ impl Display for Operation {
         match self {
             Operation::ADCA { target } => f.write_fmt(format_args!("ADC A, {}", target)),
             Operation::ADCAMEM => f.write_str("ADC A, [HL]"),
+            Operation::ADCAU8 { value } => f.write_fmt(format_args!("ADC A, {:#4x}", value)),
             Operation::ADDA { target } => f.write_fmt(format_args!("ADD A, {}", target)),
             Operation::ADDAMEM => f.write_str("ADD A, [HL]"),
             Operation::ADDAU8 { value } => f.write_fmt(format_args!("ADD A, {:#4x}", value)),
@@ -596,6 +600,11 @@ impl Instruction {
     /// the result back to the `A` register.
     fn adc_a_mem() -> Self {
         Self::new(1, 8, Operation::ADCAMEM)
+    }
+    /// Creates an instruction that adds the `u8` value and the value of the carry flag to the
+    /// value in the `A` register and stores the result back to the `A` register.
+    fn adc_a_u8(value: u8) -> Self {
+        Self::new(2, 8, Operation::ADCAU8 { value })
     }
     /// Creates a new instruction that adds the value in the [`Target8Bit`] register to the
     /// value in the HL register and stores it back to the HL register.
@@ -1349,6 +1358,9 @@ impl Cpu {
             0xCD => Some(Instruction::call(
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
+            0xCE => Some(Instruction::adc_a_u8(
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
+            )),
             0xCF => Some(Instruction::rst(0x08)),
 
             // 0xDx
@@ -1456,6 +1468,25 @@ impl Cpu {
                 self.registers
                     .f
                     .set_h(((a & 0x0F) + (mem_value & 0x0F) + carry_value) > 0x0F);
+                self.registers
+                    .f
+                    .set_c(overflowed || overflowed_intermediate);
+            }
+            Operation::ADCAU8 { value } => {
+                let a = self.registers.a;
+
+                let carry_value = self.registers.f.c() as u8;
+
+                let (intermediate, overflowed_intermediate) = value.overflowing_add(carry_value);
+                let (new_value, overflowed) = a.overflowing_add(intermediate);
+
+                self.registers.a = new_value;
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(false);
+                self.registers
+                    .f
+                    .set_h(((a & 0x0F) + (value & 0x0F) + carry_value) > 0x0F);
                 self.registers
                     .f
                     .set_c(overflowed || overflowed_intermediate);
@@ -6478,6 +6509,21 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_adc_a_u8() {
+        let op_code: u8 = 0xCE;
+
+        let mut memory = Memory::new();
+        memory.write_u8(1, 13);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::ADCAU8 { value: 13 }, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_rst_0x08() {
         let op_code: u8 = 0xCF;
 
@@ -7322,6 +7368,7 @@ mod json_tests {
     test_instruction!(test_CA, "ca.json", 0xCA);
     test_instruction!(test_CC, "cc.json", 0xCC);
     test_instruction!(test_CD, "cd.json", 0xCD);
+    test_instruction!(test_CE, "ce.json", 0xCE);
     test_instruction!(test_CF, "cf.json", 0xCF);
 
     // 0xDx
