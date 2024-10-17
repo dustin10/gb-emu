@@ -423,6 +423,8 @@ enum Operation {
     /// Prefix op code which causes the subsequent byte to represent a different set of
     /// instructions.
     PREFIX,
+    /// Pushes the contents of the [`PushPopTarget`] register onto the memory stack.
+    PUSH { target: PushPopTarget },
     /// Conditionally pops from the memory stack the program counter value that was pushed to the
     /// stack when the subroutine was called based on the state of the [`CondJumpTarget`].
     RET { target: CondJumpTarget, jump: bool },
@@ -523,6 +525,7 @@ impl Display for Operation {
             Operation::ORAMEM => f.write_str("OR A, [HL]"),
             Operation::POP { target } => f.write_fmt(format_args!("POP {}", target)),
             Operation::PREFIX => f.write_str("PREFIX"),
+            Operation::PUSH { target } => f.write_fmt(format_args!("PUSH {}", target)),
             Operation::RET { target, .. } => f.write_fmt(format_args!("RET {}", target)),
             Operation::RL { target } => match target {
                 Target::A => f.write_str("RLA"),
@@ -825,6 +828,11 @@ impl Instruction {
     /// Creates a new prefix instruction.
     fn prefix() -> Self {
         Self::new(1, 4, Operation::PREFIX)
+    }
+    /// Creates a new instruction that pushes the contents of the [`PushPopTarget`] register onto
+    /// the memory stack.
+    fn push(target: PushPopTarget) -> Self {
+        Self::new(1, 16, Operation::PUSH { target })
     }
     /// Creates a new instruction that conditionally pops from the memory stack the program
     /// counter value that was pushed to the stack when the subroutine was called based on the
@@ -1303,6 +1311,7 @@ impl Cpu {
                 !self.registers.f.z(),
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
+            0xC5 => Some(Instruction::push(PushPopTarget::BC)),
             0xC8 => Some(Instruction::ret(CondJumpTarget::Z, self.registers.f.z())),
             0xCA => Some(Instruction::jpc(
                 CondJumpTarget::Z,
@@ -1332,6 +1341,7 @@ impl Cpu {
                 !self.registers.f.c(),
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
+            0xD5 => Some(Instruction::push(PushPopTarget::DE)),
             0xD8 => Some(Instruction::ret(CondJumpTarget::C, self.registers.f.c())),
             0xDA => Some(Instruction::jpc(
                 CondJumpTarget::C,
@@ -1346,10 +1356,12 @@ impl Cpu {
 
             // 0xEx
             0xE1 => Some(Instruction::pop(PushPopTarget::HL)),
+            0xE5 => Some(Instruction::push(PushPopTarget::HL)),
             0xE9 => Some(Instruction::jp_hl()),
 
             // 0xFx
             0xF1 => Some(Instruction::pop(PushPopTarget::AF)),
+            0xF5 => Some(Instruction::push(PushPopTarget::AF)),
 
             _ => None,
         }
@@ -1944,6 +1956,20 @@ impl Cpu {
                 }
             }
             Operation::PREFIX => {}
+            Operation::PUSH { target } => {
+                let value = match target {
+                    PushPopTarget::BC => self.registers.bc(),
+                    PushPopTarget::DE => self.registers.de(),
+                    PushPopTarget::HL => self.registers.hl(),
+                    PushPopTarget::AF => self.registers.af(),
+                };
+
+                self.registers.sp = self.registers.sp.wrapping_sub(1);
+                memory.write_u8(self.registers.sp, (value >> 8) as u8);
+
+                self.registers.sp = self.registers.sp.wrapping_sub(1);
+                memory.write_u8(self.registers.sp, value as u8);
+            }
             Operation::RET { jump, .. } => {
                 if jump {
                     let low = memory.read_u8(self.registers.sp) as u16;
@@ -7034,6 +7060,7 @@ mod json_tests {
     test_instruction!(test_C2, "c2.json", 0xC2);
     test_instruction!(test_C3, "c3.json", 0xC3);
     test_instruction!(test_C4, "c4.json", 0xC4);
+    test_instruction!(test_C5, "c5.json", 0xC5);
     test_instruction!(test_C8, "c8.json", 0xC8);
     test_instruction!(test_CA, "ca.json", 0xCA);
     test_instruction!(test_CC, "cc.json", 0xCC);
@@ -7044,14 +7071,17 @@ mod json_tests {
     test_instruction!(test_D1, "d1.json", 0xD1);
     test_instruction!(test_D2, "d2.json", 0xD2);
     test_instruction!(test_D4, "d4.json", 0xD4);
+    test_instruction!(test_D5, "d5.json", 0xD5);
     test_instruction!(test_D8, "d8.json", 0xD8);
     test_instruction!(test_DA, "da.json", 0xDA);
     test_instruction!(test_DC, "dc.json", 0xDC);
 
     // 0xEx
     test_instruction!(test_E1, "e1.json", 0xE1);
+    test_instruction!(test_E5, "e5.json", 0xE5);
     test_instruction!(test_E9, "e9.json", 0xE9);
 
     // 0xFx
     test_instruction!(test_F1, "f1.json", 0xF1);
+    test_instruction!(test_F5, "f5.json", 0xF5);
 }
