@@ -451,6 +451,9 @@ enum Operation {
     /// Subtracts the value at the memory address pointed to by the value in the `HL` register and the
     /// carry flag from the value in the `A` register and stores the result back to the `A` register.
     SBCAMEM,
+    /// Subtracts the `u8` value and the value of the carry flag from the value in the `A` register and
+    /// stores the result back to the `A` register.
+    SBCAU8 { value: u8 },
     /// Sets the carry flag.
     SCF,
     /// Stops the system clock and stop mode is entered.
@@ -461,6 +464,9 @@ enum Operation {
     /// Subtracts the value at the memory address pointed to by the value in the `HL` register
     /// from the value in the `A` register and stores the result back to the `A` register.
     SUBAMEM,
+    /// Subtracts the `u8` from the value in the `A` register and stores the result back into the `A`
+    /// register.
+    SUBAU8 { value: u8 },
     /// Takes the logical XOR for each bit of the contents of the [`Target8Bit`] register and the
     /// contents of the `A` register and stores the result back to the `A` register.
     XORA { target: Target8Bit },
@@ -557,10 +563,12 @@ impl Display for Operation {
             Operation::RST { value } => f.write_fmt(format_args!("RST {:#4x}", value)),
             Operation::SBCA { target } => f.write_fmt(format_args!("SBC A, {}", target)),
             Operation::SBCAMEM => f.write_str("SBC A, [HL]"),
+            Operation::SBCAU8 { value } => f.write_fmt(format_args!("SBC A, {:#4x}", value)),
             Operation::SCF => f.write_str("SCF"),
             Operation::STOP => f.write_str("STOP"),
             Operation::SUBA { target } => f.write_fmt(format_args!("SUB A, {}", target)),
             Operation::SUBAMEM => f.write_str("SUB A, [HL]"),
+            Operation::SUBAU8 { value } => f.write_fmt(format_args!("SUB A, {:#4x}", value)),
             Operation::XORA { target } => f.write_fmt(format_args!("XOR A, {}", target)),
             Operation::XORAMEM => f.write_str("XOR A, [HL]"),
         }
@@ -921,6 +929,11 @@ impl Instruction {
     fn sbc_a_mem() -> Self {
         Self::new(1, 8, Operation::SBCAMEM)
     }
+    /// Creates an instruction that subtracts the `u8` value and the value of the carry flag from
+    /// the value in the `A` register and stores the result back to the `A` register.
+    fn sbc_a_u8(value: u8) -> Self {
+        Self::new(2, 8, Operation::SBCAU8 { value })
+    }
     /// Creates a new stop instruction that sets the carry flag.
     fn scf() -> Self {
         Self::new(1, 4, Operation::SCF)
@@ -939,6 +952,11 @@ impl Instruction {
     /// the `A` register.
     fn sub_a_mem() -> Self {
         Self::new(1, 8, Operation::SUBAMEM)
+    }
+    /// Creates a new instruction that subtracts the `u8` to the value in the `A` register and
+    /// stores the result back into the `A` register.
+    fn sub_a_u8(value: u8) -> Self {
+        Self::new(2, 8, Operation::SUBAU8 { value })
     }
     /// Creates a new instruction that takes the logical XOR for each bit of the contents of
     /// the [`Target8Bit`] register and the contents of the `A` register and stores the result
@@ -1377,6 +1395,9 @@ impl Cpu {
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
             )),
             0xD5 => Some(Instruction::push(PushPopTarget::DE)),
+            0xD6 => Some(Instruction::sub_a_u8(
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
+            )),
             0xD7 => Some(Instruction::rst(0x10)),
             0xD8 => Some(Instruction::ret(CondJumpTarget::C, self.registers.f.c())),
             0xDA => Some(Instruction::jpc(
@@ -1388,6 +1409,9 @@ impl Cpu {
                 CondJumpTarget::C,
                 self.registers.f.c(),
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
+            )),
+            0xDE => Some(Instruction::sbc_a_u8(
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
             )),
             0xDF => Some(Instruction::rst(0x18)),
 
@@ -2183,6 +2207,24 @@ impl Cpu {
                     .f
                     .set_c(overflowed || overflowed_intermediate);
             }
+            Operation::SBCAU8 { value } => {
+                let a = self.registers.a;
+                let carry_value = self.registers.f.c() as u8;
+
+                let (intermediate, overflowed_intermediate) = a.overflowing_sub(value);
+                let (new_value, overflowed) = intermediate.overflowing_sub(carry_value);
+
+                self.registers.a = new_value;
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(true);
+                self.registers.f.set_h(
+                    (((a & 0x0F) as i32) - ((value & 0x0F) as i32) - (carry_value as i32)) < 0,
+                );
+                self.registers
+                    .f
+                    .set_c(overflowed || overflowed_intermediate);
+            }
             Operation::SCF => {
                 self.registers.f.set_n(false);
                 self.registers.f.set_h(false);
@@ -2226,6 +2268,18 @@ impl Cpu {
                 self.registers.f.set_z(new_value == 0);
                 self.registers.f.set_n(true);
                 self.registers.f.set_h(will_half_carry_sub_u8(a, mem_value));
+                self.registers.f.set_c(overflowed);
+            }
+            Operation::SUBAU8 { value } => {
+                let a = self.registers.a;
+
+                let (new_value, overflowed) = a.overflowing_sub(value);
+
+                self.registers.a = new_value;
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(true);
+                self.registers.f.set_h(will_half_carry_sub_u8(a, value));
                 self.registers.f.set_c(overflowed);
             }
             Operation::XORA { target } => {
@@ -6705,6 +6759,21 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_sub_a_u8() {
+        let op_code: u8 = 0xD6;
+
+        let mut memory = Memory::new();
+        memory.write_u8(1, 22);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::SUBAU8 { value: 22 }, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_rst_0x10() {
         let op_code: u8 = 0xD7;
 
@@ -6845,6 +6914,21 @@ mod tests {
                 instruction.operation
             );
         }
+    }
+
+    #[test]
+    fn test_cpu_decode_sbc_a_u8() {
+        let op_code: u8 = 0xDE;
+
+        let mut memory = Memory::new();
+        memory.write_u8(1, 22);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::SBCAU8 { value: 22 }, instruction.operation);
     }
 
     #[test]
@@ -7377,10 +7461,12 @@ mod json_tests {
     test_instruction!(test_D2, "d2.json", 0xD2);
     test_instruction!(test_D4, "d4.json", 0xD4);
     test_instruction!(test_D5, "d5.json", 0xD5);
+    test_instruction!(test_D6, "d6.json", 0xD6);
     test_instruction!(test_D7, "d7.json", 0xD7);
     test_instruction!(test_D8, "d8.json", 0xD8);
     test_instruction!(test_DA, "da.json", 0xDA);
     test_instruction!(test_DC, "dc.json", 0xDC);
+    test_instruction!(test_DE, "de.json", 0xDE);
     test_instruction!(test_DF, "df.json", 0xDF);
 
     // 0xEx
