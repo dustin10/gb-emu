@@ -431,9 +431,12 @@ enum Operation {
     PREFIX,
     /// Pushes the contents of the [`PushPopTarget`] register onto the memory stack.
     PUSH { target: PushPopTarget },
+    /// Pops from the memory stack the program counter value that was pushed to the
+    /// stack when the subroutine was called.
+    RET,
     /// Conditionally pops from the memory stack the program counter value that was pushed to the
     /// stack when the subroutine was called based on the state of the [`CondJumpTarget`].
-    RET { target: CondJumpTarget, jump: bool },
+    RETC { target: CondJumpTarget, jump: bool },
     /// Bit rotate the [`Target`] register left by one, through the carry flag.
     RL { target: Target },
     /// Bit rotate the [`Target`] register left by one, not through the carry flag.
@@ -543,7 +546,8 @@ impl Display for Operation {
             Operation::POP { target } => f.write_fmt(format_args!("POP {}", target)),
             Operation::PREFIX => f.write_str("PREFIX"),
             Operation::PUSH { target } => f.write_fmt(format_args!("PUSH {}", target)),
-            Operation::RET { target, .. } => f.write_fmt(format_args!("RET {}", target)),
+            Operation::RET => f.write_str("RET"),
+            Operation::RETC { target, .. } => f.write_fmt(format_args!("RET {}", target)),
             Operation::RL { target } => match target {
                 Target::A => f.write_str("RLA"),
                 _ => f.write_fmt(format_args!("RL {}", target)),
@@ -864,13 +868,19 @@ impl Instruction {
     fn push(target: PushPopTarget) -> Self {
         Self::new(1, 16, Operation::PUSH { target })
     }
+    /// Creates a new instruction that pops from the memory stack the program counter value that
+    /// was pushed to the stack when the subroutine was called based on the state of the
+    /// [`CondJumpTarget`].
+    fn ret() -> Self {
+        Self::new(1, 16, Operation::RET)
+    }
     /// Creates a new instruction that conditionally pops from the memory stack the program
     /// counter value that was pushed to the stack when the subroutine was called based on the
     /// state of the [`CondJumpTarget`].
-    fn ret(target: CondJumpTarget, jump: bool) -> Self {
+    fn retc(target: CondJumpTarget, jump: bool) -> Self {
         let t = if jump { 20 } else { 8 };
 
-        Self::new(1, t, Operation::RET { target, jump })
+        Self::new(1, t, Operation::RETC { target, jump })
     }
     /// Creates a new instruction that bit rotates the value in the [`Target`] register left by
     /// one through the carry flag.
@@ -1341,7 +1351,7 @@ impl Cpu {
             0xBF => Some(Instruction::cp_a(Target8Bit::A)),
 
             // 0xCx
-            0xC0 => Some(Instruction::ret(CondJumpTarget::NZ, !self.registers.f.z())),
+            0xC0 => Some(Instruction::retc(CondJumpTarget::NZ, !self.registers.f.z())),
             0xC1 => Some(Instruction::pop(PushPopTarget::BC)),
             0xC2 => Some(Instruction::jpc(
                 CondJumpTarget::NZ,
@@ -1361,7 +1371,8 @@ impl Cpu {
                 memory.read_u8(self.registers.pc.wrapping_add(1)),
             )),
             0xC7 => Some(Instruction::rst(0x00)),
-            0xC8 => Some(Instruction::ret(CondJumpTarget::Z, self.registers.f.z())),
+            0xC8 => Some(Instruction::retc(CondJumpTarget::Z, self.registers.f.z())),
+            0xC9 => Some(Instruction::ret()),
             0xCA => Some(Instruction::jpc(
                 CondJumpTarget::Z,
                 self.registers.f.z(),
@@ -1382,7 +1393,7 @@ impl Cpu {
             0xCF => Some(Instruction::rst(0x08)),
 
             // 0xDx
-            0xD0 => Some(Instruction::ret(CondJumpTarget::NC, !self.registers.f.c())),
+            0xD0 => Some(Instruction::retc(CondJumpTarget::NC, !self.registers.f.c())),
             0xD1 => Some(Instruction::pop(PushPopTarget::DE)),
             0xD2 => Some(Instruction::jpc(
                 CondJumpTarget::NC,
@@ -1399,7 +1410,7 @@ impl Cpu {
                 memory.read_u8(self.registers.pc.wrapping_add(1)),
             )),
             0xD7 => Some(Instruction::rst(0x10)),
-            0xD8 => Some(Instruction::ret(CondJumpTarget::C, self.registers.f.c())),
+            0xD8 => Some(Instruction::retc(CondJumpTarget::C, self.registers.f.c())),
             0xDA => Some(Instruction::jpc(
                 CondJumpTarget::C,
                 self.registers.f.c(),
@@ -2066,7 +2077,15 @@ impl Cpu {
                 self.registers.sp = self.registers.sp.wrapping_sub(1);
                 memory.write_u8(self.registers.sp, value as u8);
             }
-            Operation::RET { jump, .. } => {
+            Operation::RET => {
+                let low = memory.read_u8(self.registers.sp) as u16;
+                self.registers.sp = self.registers.sp.wrapping_add(1);
+                let high = memory.read_u8(self.registers.sp) as u16;
+                self.registers.sp = self.registers.sp.wrapping_add(1);
+
+                self.registers.pc = (high << 8) | low;
+            }
+            Operation::RETC { jump, .. } => {
                 if jump {
                     let low = memory.read_u8(self.registers.sp) as u16;
                     self.registers.sp = self.registers.sp.wrapping_add(1);
@@ -6204,7 +6223,7 @@ mod tests {
             assert_eq!(1, instruction.num_bytes);
             assert_eq!(20, instruction.clock_ticks);
             assert_eq!(
-                Operation::RET {
+                Operation::RETC {
                     target: CondJumpTarget::NZ,
                     jump: true,
                 },
@@ -6221,7 +6240,7 @@ mod tests {
             assert_eq!(1, instruction.num_bytes);
             assert_eq!(8, instruction.clock_ticks);
             assert_eq!(
-                Operation::RET {
+                Operation::RETC {
                     target: CondJumpTarget::NZ,
                     jump: false,
                 },
@@ -6417,7 +6436,7 @@ mod tests {
             assert_eq!(1, instruction.num_bytes);
             assert_eq!(20, instruction.clock_ticks);
             assert_eq!(
-                Operation::RET {
+                Operation::RETC {
                     target: CondJumpTarget::Z,
                     jump: true,
                 },
@@ -6433,13 +6452,27 @@ mod tests {
             assert_eq!(1, instruction.num_bytes);
             assert_eq!(8, instruction.clock_ticks);
             assert_eq!(
-                Operation::RET {
+                Operation::RETC {
                     target: CondJumpTarget::Z,
                     jump: false,
                 },
                 instruction.operation
             );
         }
+    }
+
+    #[test]
+    fn test_cpu_decode_ret() {
+        let op_code: u8 = 0xC9;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RET, instruction.operation);
     }
 
     #[test]
@@ -6604,7 +6637,7 @@ mod tests {
             assert_eq!(1, instruction.num_bytes);
             assert_eq!(20, instruction.clock_ticks);
             assert_eq!(
-                Operation::RET {
+                Operation::RETC {
                     target: CondJumpTarget::NC,
                     jump: true,
                 },
@@ -6621,7 +6654,7 @@ mod tests {
             assert_eq!(1, instruction.num_bytes);
             assert_eq!(8, instruction.clock_ticks);
             assert_eq!(
-                Operation::RET {
+                Operation::RETC {
                     target: CondJumpTarget::NC,
                     jump: false,
                 },
@@ -6801,7 +6834,7 @@ mod tests {
             assert_eq!(1, instruction.num_bytes);
             assert_eq!(20, instruction.clock_ticks);
             assert_eq!(
-                Operation::RET {
+                Operation::RETC {
                     target: CondJumpTarget::C,
                     jump: true,
                 },
@@ -6817,7 +6850,7 @@ mod tests {
             assert_eq!(1, instruction.num_bytes);
             assert_eq!(8, instruction.clock_ticks);
             assert_eq!(
-                Operation::RET {
+                Operation::RETC {
                     target: CondJumpTarget::C,
                     jump: false,
                 },
@@ -7449,6 +7482,7 @@ mod json_tests {
     test_instruction!(test_C6, "c6.json", 0xC6);
     test_instruction!(test_C7, "c7.json", 0xC7);
     test_instruction!(test_C8, "c8.json", 0xC8);
+    test_instruction!(test_C9, "c9.json", 0xC9);
     test_instruction!(test_CA, "ca.json", 0xCA);
     test_instruction!(test_CC, "cc.json", 0xCC);
     test_instruction!(test_CD, "cd.json", 0xCD);
