@@ -437,6 +437,9 @@ enum Operation {
     /// Conditionally pops from the memory stack the program counter value that was pushed to the
     /// stack when the subroutine was called based on the state of the [`CondJumpTarget`].
     RETC { target: CondJumpTarget, jump: bool },
+    /// Pops from the memory stack the program counter value that was pushed to the
+    /// stack when the subroutine was called and resumes allowing of interrupts.
+    RETI,
     /// Bit rotate the [`Target`] register left by one, through the carry flag.
     RL { target: Target },
     /// Bit rotate the [`Target`] register left by one, not through the carry flag.
@@ -548,6 +551,7 @@ impl Display for Operation {
             Operation::PUSH { target } => f.write_fmt(format_args!("PUSH {}", target)),
             Operation::RET => f.write_str("RET"),
             Operation::RETC { target, .. } => f.write_fmt(format_args!("RET {}", target)),
+            Operation::RETI => f.write_str("RETI"),
             Operation::RL { target } => match target {
                 Target::A => f.write_str("RLA"),
                 _ => f.write_fmt(format_args!("RL {}", target)),
@@ -882,6 +886,11 @@ impl Instruction {
 
         Self::new(1, t, Operation::RETC { target, jump })
     }
+    /// Creates a new instruction that pops from the memory stack the program counter value that
+    /// was pushed to the stack when the subroutine was called and resumes allowing interrupts.
+    fn reti() -> Self {
+        Self::new(1, 16, Operation::RETI)
+    }
     /// Creates a new instruction that bit rotates the value in the [`Target`] register left by
     /// one through the carry flag.
     fn rl(target: Target) -> Self {
@@ -1021,6 +1030,8 @@ pub struct Cpu {
     history: BoundedVecDeque<Instruction>,
     /// Flag indicating whether the cpu is in HALT mode.
     halted: bool,
+    /// Flag indicating whether interrupts are currently enabled.
+    interruptable: bool,
 }
 
 /// Default value for the maximum number of instructions stored in the instruction execution
@@ -1046,6 +1057,7 @@ impl Cpu {
             instruction_set: InstructionSet::default(),
             history: BoundedVecDeque::with_capacity(max, max),
             halted: false,
+            interruptable: true,
         }
     }
     /// Reads and executes the next instruction based on the current program counter.
@@ -1411,6 +1423,7 @@ impl Cpu {
             )),
             0xD7 => Some(Instruction::rst(0x10)),
             0xD8 => Some(Instruction::retc(CondJumpTarget::C, self.registers.f.c())),
+            0xD9 => Some(Instruction::reti()),
             0xDA => Some(Instruction::jpc(
                 CondJumpTarget::C,
                 self.registers.f.c(),
@@ -2094,6 +2107,16 @@ impl Cpu {
 
                     self.registers.pc = (high << 8) | low;
                 }
+            }
+            Operation::RETI => {
+                let low = memory.read_u8(self.registers.sp) as u16;
+                self.registers.sp = self.registers.sp.wrapping_add(1);
+                let high = memory.read_u8(self.registers.sp) as u16;
+                self.registers.sp = self.registers.sp.wrapping_add(1);
+
+                self.registers.pc = (high << 8) | low;
+
+                self.interruptable = true;
             }
             // TODO: cleanup
             Operation::RL { target } => {
@@ -6860,6 +6883,20 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_reti() {
+        let op_code: u8 = 0xD9;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RETI, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_jp_c() {
         let op_code: u8 = 0xDA;
 
@@ -7498,6 +7535,7 @@ mod json_tests {
     test_instruction!(test_D6, "d6.json", 0xD6);
     test_instruction!(test_D7, "d7.json", 0xD7);
     test_instruction!(test_D8, "d8.json", 0xD8);
+    test_instruction!(test_D9, "d9.json", 0xD9);
     test_instruction!(test_DA, "da.json", 0xDA);
     test_instruction!(test_DC, "dc.json", 0xDC);
     test_instruction!(test_DE, "de.json", 0xDE);
