@@ -393,6 +393,8 @@ enum Operation {
     /// `HL` register and stores it in the `A` register, then increments the value in the `HL`
     /// register.
     LDAMEMINC,
+    /// Loads the value of the `A` register and stores it in memory at the address.
+    LDAU16 { address: u16 },
     /// Loads the value in the [`Target16Bit`] register and stores it at the address in memory.
     LDA16 { address: u16, target: Target16Bit },
     /// Loads the value in the `target` 8-bit register and stores it in the memory address pointed
@@ -413,7 +415,7 @@ enum Operation {
         store: Target8Bit,
         target: Target16Bit,
     },
-    /// Loads the [`u16`] value from memory and stores it in the [`Target16Bit`] register.
+    /// Loads the `u16` value from memory and stores it in the [`Target16Bit`] register.
     LDU16 { target: Target16Bit, value: u16 },
     /// Loads the [`u8`] value from memory and stores it in the [`Target8Bit`] register.
     LDU8 { target: Target8Bit, value: u8 },
@@ -485,6 +487,9 @@ enum Operation {
     /// [`HL`] register and the contents of the `A` register and stores the result back to the `A`
     /// register.
     XORAMEM,
+    /// Takes the logical XOR for each bit of the contents of the `A` register and the contents of
+    /// the `A` register and stores the result back to the `A` register.
+    XORAU8 { value: u8 },
 }
 
 impl Display for Operation {
@@ -531,9 +536,11 @@ impl Display for Operation {
             Operation::LDAMEM { target } => f.write_fmt(format_args!("LD A, [{}]", target)),
             Operation::LDAMEMDEC => f.write_str("LD A, [HL-]"),
             Operation::LDAMEMINC => f.write_str("LD A, [HL+]"),
+            Operation::LDAU16 { address } => f.write_fmt(format_args!("LD [{:#6x}], A", address)),
             Operation::LDA16 { address, target } => {
-                f.write_fmt(format_args!("LD [{:#6x}] {}", address, target))
+                f.write_fmt(format_args!("LD [{:#6x}], {}", address, target))
             }
+
             Operation::LDMEMREG { store, target } => {
                 f.write_fmt(format_args!("LD [{}], {}", store, target))
             }
@@ -586,6 +593,7 @@ impl Display for Operation {
             Operation::SUBAU8 { value } => f.write_fmt(format_args!("SUB A, {:#4x}", value)),
             Operation::XORA { target } => f.write_fmt(format_args!("XOR A, {}", target)),
             Operation::XORAMEM => f.write_str("XOR A, [HL]"),
+            Operation::XORAU8 { value } => f.write_fmt(format_args!("XOR A, {:#4x}", value)),
         }
     }
 }
@@ -824,6 +832,11 @@ impl Instruction {
     fn ld_a_mem_inc() -> Self {
         Self::new(1, 8, Operation::LDAMEMINC)
     }
+    /// Creates a new instruction that loads the value of the `A` register and stores it in memory
+    /// at the address.
+    fn ld_a_u16(address: u16) -> Self {
+        Self::new(3, 16, Operation::LDAU16 { address })
+    }
     /// Creates a new instruction which loads the value in the target register and stores it at
     /// the given address in memory.
     fn ld_a16(address: u16, target: Target16Bit) -> Self {
@@ -1005,6 +1018,12 @@ impl Instruction {
     /// and stores the result back to the `A` register.
     fn xor_a_mem() -> Self {
         Self::new(1, 8, Operation::XORAMEM)
+    }
+
+    /// Creates a new instruction that takes the logical XOR for each bit of value the contents of
+    /// the `A` register and stores the result back to the `A` register.
+    fn xor_a_u8(value: u8) -> Self {
+        Self::new(2, 8, Operation::XORAU8 { value })
     }
 }
 
@@ -1467,6 +1486,12 @@ impl Cpu {
                 memory.read_i8(self.registers.pc.wrapping_add(1)),
             )),
             0xE9 => Some(Instruction::jp_hl()),
+            0xEA => Some(Instruction::ld_a_u16(
+                memory.read_u16(self.registers.pc.wrapping_add(1)),
+            )),
+            0xEE => Some(Instruction::xor_a_u8(
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
+            )),
             0xEF => Some(Instruction::rst(0x28)),
 
             // 0xFx
@@ -1986,6 +2011,9 @@ impl Cpu {
                 self.registers.a = memory.read_u8(self.registers.hl());
                 self.registers.set_hl(self.registers.hl().wrapping_add(1));
             }
+            Operation::LDAU16 { address } => {
+                memory.write_u8(address, self.registers.a);
+            }
             Operation::LDA16 { address, target } => match target {
                 Target16Bit::SP => {
                     let low = self.registers.sp as u8;
@@ -2402,6 +2430,15 @@ impl Cpu {
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(false);
             }
+            Operation::XORAU8 { value } => {
+                self.registers.a ^= value;
+
+                self.registers.f.set_z(self.registers.a == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(false);
+            }
+
             _ => todo!(),
         }
     }
@@ -7160,6 +7197,37 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_ld_a_u16() {
+        let op_code: u8 = 0xEA;
+
+        let mut memory = Memory::new();
+        memory.write_u8(1, 0x01);
+        memory.write_u8(2, 0x02);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(3, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::LDAU16 { address: 0x0201 }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_xor_a_u8() {
+        let op_code: u8 = 0xEE;
+
+        let mut memory = Memory::new();
+        memory.write_u8(1, 9);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::XORAU8 { value: 9 }, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_rst_0x28() {
         let op_code: u8 = 0xEF;
 
@@ -7626,6 +7694,8 @@ mod json_tests {
     test_instruction!(test_E7, "e7.json", 0xE7);
     test_instruction!(test_E8, "e8.json", 0xE8);
     test_instruction!(test_E9, "e9.json", 0xE9);
+    test_instruction!(test_EA, "ea.json", 0xEA);
+    test_instruction!(test_EE, "ee.json", 0xEE);
     test_instruction!(test_EF, "ef.json", 0xEF);
 
     // 0xFx
