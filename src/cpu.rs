@@ -476,8 +476,11 @@ enum Operation {
     RETI,
     /// Bit rotate the [`Target`] register left by one, through the carry flag.
     RL { target: Target },
-    /// Bit rotate the [`Target`] register left by one, not through the carry flag.
-    RLC { target: Target },
+    /// Bit rotate the [`Target8Bit`] register left by one, not through the carry flag.
+    RLC { target: Target8Bit },
+    /// Bit rotate the `A` register left by one, not through the carry flag. Sets the zero flag to
+    /// false.
+    RLCA,
     /// Bit rotate the [`Target`] register left by one, through the carry flag.
     RR { target: Target },
     /// Bit rotate the [`Target`] register right by one, not through the carry flag.
@@ -611,10 +614,8 @@ impl Display for Operation {
                 Target::A => f.write_str("RLA"),
                 _ => f.write_fmt(format_args!("RL {}", target)),
             },
-            Operation::RLC { target } => match target {
-                Target::A => f.write_str("RLCA"),
-                _ => f.write_fmt(format_args!("RLC {}", target)),
-            },
+            Operation::RLC { target } => f.write_fmt(format_args!("RLC {}", target)),
+            Operation::RLCA => f.write_str("RLCA"),
             Operation::RR { target } => match target {
                 Target::A => f.write_str("RRA"),
                 _ => f.write_fmt(format_args!("RR {}", target)),
@@ -1030,13 +1031,13 @@ impl Instruction {
     }
     /// Creates a new instruction that bit rotates the value in the [`Target`] register left by
     /// one, not through the carry flag.
-    fn rlc(target: Target) -> Self {
-        Self::new(1, 4, Operation::RLC { target })
+    fn rlc(target: Target8Bit) -> Self {
+        Self::new(1, 8, Operation::RLC { target })
     }
     /// Creates a new instruction that bit rotates the value in the `A` register left by one, not
     /// through the carry flag.
     fn rlca() -> Self {
-        Self::rlc(Target::A)
+        Self::new(1, 4, Operation::RLCA)
     }
     /// Creates a new instruction that bit rotates the value in the [`Target`] register right by
     /// one through the carry flag.
@@ -1196,6 +1197,7 @@ impl Cpu {
     /// Reads and executes the next instruction based on the current program counter.
     pub fn step(&mut self, memory: &mut Memory) {
         let op_code = memory.read_u8(self.registers.pc);
+        println!("op_code: {:#4x}", op_code);
 
         let instruction = match self.instruction_set {
             InstructionSet::Standard => self.decode(op_code, memory),
@@ -1620,6 +1622,7 @@ impl Cpu {
             )),
             0xFF => Some(Instruction::rst(0x38)),
 
+            // invalid op code
             _ => None,
         }
     }
@@ -1627,7 +1630,20 @@ impl Cpu {
     /// [`Cpu`]. An op code is prefixed if the preceding op code byte was 0xCB.
     fn decode_prefixed(&self, op_code: u8) -> Option<Instruction> {
         tracing::debug!("decode prefixed op code {:#4x}", op_code);
-        todo!()
+
+        // 0x0x
+        match op_code {
+            0x00 => Some(Instruction::rlc(Target8Bit::B)),
+            0x01 => Some(Instruction::rlc(Target8Bit::C)),
+            0x02 => Some(Instruction::rlc(Target8Bit::D)),
+            0x03 => Some(Instruction::rlc(Target8Bit::E)),
+            0x04 => Some(Instruction::rlc(Target8Bit::H)),
+            0x05 => Some(Instruction::rlc(Target8Bit::L)),
+            0x07 => Some(Instruction::rlc(Target8Bit::A)),
+
+            // invalid op code
+            _ => None,
+        }
     }
     /// Executes the given [`Instruction`] returning the new program counter value and whether or
     /// not the op code for the next instruction is prefixed.
@@ -2388,17 +2404,35 @@ impl Cpu {
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(will_carry);
             }
-            // TODO: cleanup
             Operation::RLC { target } => {
+                println!("in RLC handler");
                 let mut value = match target {
-                    Target::A => &mut self.registers.a,
-                    _ => panic!("not implemented"),
+                    Target8Bit::A => &mut self.registers.a,
+                    Target8Bit::B => &mut self.registers.b,
+                    Target8Bit::C => &mut self.registers.c,
+                    Target8Bit::D => &mut self.registers.d,
+                    Target8Bit::E => &mut self.registers.e,
+                    Target8Bit::H => &mut self.registers.h,
+                    Target8Bit::L => &mut self.registers.l,
                 };
 
                 let truncated_bit = *value & (1 << 7);
                 let will_carry = truncated_bit != 0;
 
                 *value = (*value << 1) | (truncated_bit >> 7);
+
+                self.registers.f.set_z(*value == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(will_carry);
+            }
+            Operation::RLCA => {
+                let a = self.registers.a;
+
+                let truncated_bit = a & (1 << 7);
+                let will_carry = truncated_bit != 0;
+
+                self.registers.a = (a << 1) | (truncated_bit >> 7);
 
                 self.registers.f.set_z(false);
                 self.registers.f.set_n(false);
@@ -2866,7 +2900,7 @@ mod tests {
         let instruction = cpu.decode(op_code, &memory).expect("valid op code");
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(4, instruction.clock_ticks);
-        assert_eq!(Operation::RLC { target: Target::A }, instruction.operation);
+        assert_eq!(Operation::RLCA, instruction.operation);
     }
 
     #[test]
@@ -7644,6 +7678,125 @@ mod tests {
         assert_eq!(16, instruction.clock_ticks);
         assert_eq!(Operation::RST { value: 0x38 }, instruction.operation);
     }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rlc_b() {
+        let op_code: u8 = 0x00;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RLC {
+                target: Target8Bit::B
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rlc_c() {
+        let op_code: u8 = 0x01;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RLC {
+                target: Target8Bit::C
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rlc_d() {
+        let op_code: u8 = 0x02;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RLC {
+                target: Target8Bit::D
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rlc_e() {
+        let op_code: u8 = 0x03;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RLC {
+                target: Target8Bit::E
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rlc_h() {
+        let op_code: u8 = 0x04;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RLC {
+                target: Target8Bit::H
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rlc_l() {
+        let op_code: u8 = 0x05;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RLC {
+                target: Target8Bit::L
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rlc_a() {
+        let op_code: u8 = 0x07;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RLC {
+                target: Target8Bit::A
+            },
+            instruction.operation
+        );
+    }
 }
 
 #[cfg(test)]
@@ -7699,21 +7852,22 @@ mod json_tests {
     ///
     /// This function will panic if the JSON file cannot be read or if it cannot be successfully
     /// deserialzied into a [`Vec`] of [`Test`].
-    fn test_json_file(file_name: &str, op_code: u8) {
+    fn test_json_file(file_name: &str, op_code: u8, instruction_set: InstructionSet) {
         read_json_file(file_name)
             .and_then(deserialize_json)
             .expect("valid test JSON files")
             .into_iter()
-            .for_each(|t| execute(op_code, t));
+            .for_each(|t| execute(op_code, t, instruction_set));
     }
 
     /// Executes a [`Test`] for the given instruction op code.
-    fn execute(op_code: u8, test: Test) {
+    fn execute(op_code: u8, test: Test, instruction_set: InstructionSet) {
         println!("execute json test {}", test.name);
 
         let mut memory = Memory::new();
 
         let mut cpu = Cpu::new();
+        cpu.instruction_set = instruction_set;
         cpu.registers.pc = test.input.pc;
         cpu.registers.sp = test.input.sp;
         cpu.registers.a = test.input.a;
@@ -7734,6 +7888,12 @@ mod json_tests {
             let value = byte[1] as u8;
 
             memory.write_u8(address, value);
+        }
+
+        // mimic that we read the 0xCB byte and incremented pc if we are executing a JSON test for
+        // a prefixed instruction.
+        if cpu.instruction_set == InstructionSet::Prefixed {
+            cpu.registers.pc = cpu.registers.pc.wrapping_add(1);
         }
 
         cpu.step(&mut memory);
@@ -7772,7 +7932,19 @@ mod json_tests {
             #[ignore]
             #[allow(non_snake_case)]
             fn $name() {
-                test_json_file($file, $op)
+                test_json_file($file, $op, InstructionSet::Standard)
+            }
+        };
+    }
+
+    /// Macro that allows for easily defining a test function that executes a JSON-based test file.
+    macro_rules! test_prefixed_instruction {
+        ($name:ident, $file:expr, $op:expr) => {
+            #[test]
+            #[ignore]
+            #[allow(non_snake_case)]
+            fn $name() {
+                test_json_file($file, $op, InstructionSet::Prefixed)
             }
         };
     }
@@ -8028,7 +8200,7 @@ mod json_tests {
     // 0xEx
     test_instruction!(test_E0, "e0.json", 0xE0);
     test_instruction!(test_E1, "e1.json", 0xE1);
-    //TODO: reenable after handling the memory mapping for the address range correctly
+    //TODO: re-enable after handling the memory mapping for the address range correctly
     //test_instruction!(test_E2, "e2.json", 0xE2);
     test_instruction!(test_E5, "e5.json", 0xE5);
     test_instruction!(test_E6, "e6.json", 0xE6);
@@ -8042,7 +8214,7 @@ mod json_tests {
     // 0xFx
     test_instruction!(test_F0, "f0.json", 0xF0);
     test_instruction!(test_F1, "f1.json", 0xF1);
-    //TODO: reenable after handling the memory mapping for the address range correctly
+    //TODO: re-enable after handling the memory mapping for the address range correctly
     //test_instruction!(test_F2, "f2.json", 0xF2);
     test_instruction!(test_F3, "f3.json", 0xF3);
     test_instruction!(test_F5, "f5.json", 0xF5);
@@ -8054,4 +8226,13 @@ mod json_tests {
     test_instruction!(test_FB, "fb.json", 0xFB);
     test_instruction!(test_FE, "fe.json", 0xFE);
     test_instruction!(test_FF, "ff.json", 0xFF);
+
+    // 0xCB0x
+    test_prefixed_instruction!(test_CB00, "cb 00.json", 0x00);
+    test_prefixed_instruction!(test_CB01, "cb 01.json", 0x01);
+    test_prefixed_instruction!(test_CB02, "cb 02.json", 0x02);
+    test_prefixed_instruction!(test_CB03, "cb 03.json", 0x03);
+    test_prefixed_instruction!(test_CB04, "cb 04.json", 0x04);
+    test_prefixed_instruction!(test_CB05, "cb 05.json", 0x05);
+    test_prefixed_instruction!(test_CB07, "cb 07.json", 0x07);
 }
