@@ -304,9 +304,11 @@ enum Operation {
     /// Adds the `u8` to the value in the `A` register and stores the result back into the `A`
     /// register.
     ADDAU8 { value: u8 },
-    /// Adds the value in the [`Target16Bit`] register to the value in the HL register and stores it
-    /// back to the HL register.
+    /// Adds the value in the [`Target16Bit`] register to the value in the `HL` register and stores
+    /// it back to the `HL` register.
     ADDHL { target: Target16Bit },
+    /// Adds the value to the value in the `SP` register and stores it back to the `SP` register.
+    ADDSP { value: i8 },
     /// Takes the logical AND for each bit of the contents of the [`Target8Bit`] register and the
     /// contents of the `A` register and stores the result back to the `A` register.
     ANDA { target: Target8Bit },
@@ -314,6 +316,9 @@ enum Operation {
     /// [`HL`] register and the contents of the `A` register and stores the result back to the `A`
     /// register.
     ANDAMEM,
+    /// Takes the logical AND for each bit of the value and the contents of the `A` register and
+    /// stores the result back to the `A` register.
+    ANDAU8 { value: u8 },
     /// Pushes the current program counter on to the stack and then sets it to the value.
     CALL { value: u16 },
     /// Conditionally pushes the current program counter on to the stack and then sets it to the
@@ -493,8 +498,10 @@ impl Display for Operation {
             Operation::ADDAMEM => f.write_str("ADD A, [HL]"),
             Operation::ADDAU8 { value } => f.write_fmt(format_args!("ADD A, {:#4x}", value)),
             Operation::ADDHL { target } => f.write_fmt(format_args!("ADD HL, {}", target)),
+            Operation::ADDSP { value } => f.write_fmt(format_args!("ADD SP, {:#4x}", value)),
             Operation::ANDA { target } => f.write_fmt(format_args!("AND A, {}", target)),
             Operation::ANDAMEM => f.write_str("AND A, [HL]"),
+            Operation::ANDAU8 { value } => f.write_fmt(format_args!("AND A, {:#4x}", value)),
             Operation::CALL { value } => f.write_fmt(format_args!("CALL {:#4x}", value)),
             Operation::CALLC { target, value, .. } => {
                 f.write_fmt(format_args!("CALL {}, {:#4x}", target, value))
@@ -643,6 +650,11 @@ impl Instruction {
     fn add_hl(target: Target16Bit) -> Self {
         Self::new(1, 8, Operation::ADDHL { target })
     }
+    /// Creates a new instruction that adds the value to the value in the `SP` register and
+    /// stores it back to the `SP` register.
+    fn add_sp(value: i8) -> Self {
+        Self::new(2, 16, Operation::ADDSP { value })
+    }
     /// Creates a new instruction that takes the logical AND for each bit of the contents of
     /// the [`Target8Bit`] register and the contents of the `A` register and stores the result
     /// back to the `A` register.
@@ -654,6 +666,11 @@ impl Instruction {
     /// and stores the result back to the `A` register.
     fn and_a_mem() -> Self {
         Self::new(1, 8, Operation::ANDAMEM)
+    }
+    /// Creates a new instruction that takes the logical AND for each bit of the value and the
+    /// contents of the `A` register and stores the result back to the `A` register.
+    fn and_a_u8(value: u8) -> Self {
+        Self::new(2, 8, Operation::ANDAU8 { value })
     }
     /// Creates a new instruction that pushes the current program counter on to the stack and
     /// then sets it to the value.
@@ -1442,7 +1459,13 @@ impl Cpu {
             // 0xEx
             0xE1 => Some(Instruction::pop(PushPopTarget::HL)),
             0xE5 => Some(Instruction::push(PushPopTarget::HL)),
+            0xE6 => Some(Instruction::and_a_u8(
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
+            )),
             0xE7 => Some(Instruction::rst(0x20)),
+            0xE8 => Some(Instruction::add_sp(
+                memory.read_i8(self.registers.pc.wrapping_add(1)),
+            )),
             0xE9 => Some(Instruction::jp_hl()),
             0xEF => Some(Instruction::rst(0x28)),
 
@@ -1609,6 +1632,23 @@ impl Cpu {
                 self.registers.f.set_h(will_half_carry);
                 self.registers.f.set_c(overflowed);
             }
+            Operation::ADDSP { value } => {
+                let sp = self.registers.sp;
+                let value = value as i16;
+
+                let (new_value, overflowed) = sp.overflowing_add_signed(value);
+
+                self.registers.sp = new_value;
+
+                self.registers.f.set_z(false);
+                self.registers.f.set_n(false);
+                self.registers
+                    .f
+                    .set_h((sp & 0x000F) + ((value as u16) & 0x000F) > 0x000F);
+                self.registers
+                    .f
+                    .set_c((sp & 0x00FF) + (value as u16 & 0x00FF) > 0x00FF);
+            }
             Operation::ANDA { target } => {
                 let target_value = match target {
                     Target8Bit::A => self.registers.a,
@@ -1633,6 +1673,14 @@ impl Cpu {
                 let mem_value = memory.read_u8(hl);
 
                 self.registers.a &= mem_value;
+
+                self.registers.f.set_z(self.registers.a == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(true);
+                self.registers.f.set_c(false);
+            }
+            Operation::ANDAU8 { value } => {
+                self.registers.a &= value;
 
                 self.registers.f.set_z(self.registers.a == 0);
                 self.registers.f.set_n(false);
@@ -7054,6 +7102,21 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_and_a_u8() {
+        let op_code: u8 = 0xE6;
+
+        let mut memory = Memory::new();
+        memory.write_u8(1, 24);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::ANDAU8 { value: 24 }, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_rst_0x20() {
         let op_code: u8 = 0xE7;
 
@@ -7065,6 +7128,21 @@ mod tests {
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(16, instruction.clock_ticks);
         assert_eq!(Operation::RST { value: 0x20 }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_add_sp() {
+        let op_code: u8 = 0xE8;
+
+        let mut memory = Memory::new();
+        memory.write_u8(1, 4);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::ADDSP { value: 4 }, instruction.operation);
     }
 
     #[test]
@@ -7544,7 +7622,9 @@ mod json_tests {
     // 0xEx
     test_instruction!(test_E1, "e1.json", 0xE1);
     test_instruction!(test_E5, "e5.json", 0xE5);
+    test_instruction!(test_E6, "e6.json", 0xE6);
     test_instruction!(test_E7, "e7.json", 0xE7);
+    test_instruction!(test_E8, "e8.json", 0xE8);
     test_instruction!(test_E9, "e9.json", 0xE9);
     test_instruction!(test_EF, "ef.json", 0xEF);
 
