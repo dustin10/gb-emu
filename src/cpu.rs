@@ -347,6 +347,8 @@ enum Operation {
     DEC { target: Target },
     /// Decrements the value at the memory address specified by value of the `HL` register by 1.
     DECMEM,
+    /// Resets the interrupt master enable (IME) flag and prohibits maskable interrupts.
+    DI,
     /// Halts the system clock and halt mode is entered.
     HALT,
     /// Increments the value in the [`Target`] register by one.
@@ -431,6 +433,9 @@ enum Operation {
     /// [`HL`] register and the contents of the `A` register and stores the result back to the `A`
     /// register.
     ORAMEM,
+    /// Takes the logical OR for each bit of the value and the contents of the `A` register and
+    /// stores the result back to the `A` register.
+    ORAU8 { value: u8 },
     /// Pops the contents from the memory stack into the [`PushPopTarget`] register.
     POP { target: PushPopTarget },
     /// Prefix op code which causes the subsequent byte to represent a different set of
@@ -518,6 +523,7 @@ impl Display for Operation {
             Operation::DAA => f.write_str("DAA"),
             Operation::DEC { target } => f.write_fmt(format_args!("DEC {}", target)),
             Operation::DECMEM => f.write_str("DEC [HL]"),
+            Operation::DI => f.write_str("DI"),
             Operation::HALT => f.write_str("HALT"),
             Operation::INC { target } => f.write_fmt(format_args!("INC {}", target)),
             Operation::INCMEM => f.write_str("INC [HL]"),
@@ -560,6 +566,7 @@ impl Display for Operation {
             Operation::NOP => f.write_str("NOP"),
             Operation::ORA { target } => f.write_fmt(format_args!("OR A, {}", target)),
             Operation::ORAMEM => f.write_str("OR A, [HL]"),
+            Operation::ORAU8 { value } => f.write_fmt(format_args!("OR A, {:#4x}", value)),
             Operation::POP { target } => f.write_fmt(format_args!("POP {}", target)),
             Operation::PREFIX => f.write_str("PREFIX"),
             Operation::PUSH { target } => f.write_fmt(format_args!("PUSH {}", target)),
@@ -739,6 +746,11 @@ impl Instruction {
     fn dec_u16(target: Target) -> Self {
         Self::new(1, 8, Operation::DEC { target })
     }
+    /// Creates a new instruction that resets the interrupt master enable (IME) flag and
+    /// prohibits maskable interrupts.
+    fn di() -> Self {
+        Self::new(1, 4, Operation::DI)
+    }
     /// Creates a new instruction that halts the system clock and causes the emulator to enter
     /// halt mode.
     fn halt() -> Self {
@@ -887,6 +899,11 @@ impl Instruction {
     /// and stores the result back to the `A` register.
     fn or_a_mem() -> Self {
         Self::new(1, 8, Operation::ORAMEM)
+    }
+    /// Creates a new instruction that takes the logical OR for each bit of the value and the
+    /// contents of the `A` register and stores the result back to the `A` register.
+    fn or_a_u8(value: u8) -> Self {
+        Self::new(2, 8, Operation::ORAU8 { value })
     }
     /// Creates a new instruction that pops the contents from the memory stack into the
     /// [`PushPopTarget`] register.
@@ -1476,7 +1493,9 @@ impl Cpu {
             0xDF => Some(Instruction::rst(0x18)),
 
             // 0xEx
+            0xE0 => todo!(),
             0xE1 => Some(Instruction::pop(PushPopTarget::HL)),
+            0xE2 => todo!(),
             0xE5 => Some(Instruction::push(PushPopTarget::HL)),
             0xE6 => Some(Instruction::and_a_u8(
                 memory.read_u8(self.registers.pc.wrapping_add(1)),
@@ -1495,8 +1514,14 @@ impl Cpu {
             0xEF => Some(Instruction::rst(0x28)),
 
             // 0xFx
+            0xF0 => todo!(),
             0xF1 => Some(Instruction::pop(PushPopTarget::AF)),
+            0xF2 => todo!(),
+            0xF3 => Some(Instruction::di()),
             0xF5 => Some(Instruction::push(PushPopTarget::AF)),
+            0xF6 => Some(Instruction::or_a_u8(
+                memory.read_u8(self.registers.pc.wrapping_add(1)),
+            )),
             0xF7 => Some(Instruction::rst(0x30)),
             0xFF => Some(Instruction::rst(0x38)),
 
@@ -1891,6 +1916,7 @@ impl Cpu {
                 self.registers.f.set_n(true);
                 self.registers.f.set_h(will_half_carry_sub_u8(value, 1))
             }
+            Operation::DI => tracing::warn!("TODO: implement DI"),
             Operation::HALT => self.halted = true,
             // TODO: cleanup
             Operation::INC { target } => match target {
@@ -2130,6 +2156,14 @@ impl Cpu {
                 let mem_value = memory.read_u8(hl);
 
                 self.registers.a |= mem_value;
+
+                self.registers.f.set_z(self.registers.a == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(false);
+            }
+            Operation::ORAU8 { value } => {
+                self.registers.a |= value;
 
                 self.registers.f.set_z(self.registers.a == 0);
                 self.registers.f.set_n(false);
@@ -7261,6 +7295,20 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_di() {
+        let op_code: u8 = 0xF3;
+
+        let memory = Memory::new();
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(4, instruction.clock_ticks);
+        assert_eq!(Operation::DI, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_push_af() {
         let op_code: u8 = 0xF5;
 
@@ -7277,6 +7325,21 @@ mod tests {
             },
             instruction.operation
         );
+    }
+
+    #[test]
+    fn test_cpu_decode_or_a_u8() {
+        let op_code: u8 = 0xF6;
+
+        let mut memory = Memory::new();
+        memory.write_u8(1, 13);
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode(op_code, &memory).expect("valid op code");
+        assert_eq!(2, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(Operation::ORAU8 { value: 13 }, instruction.operation);
     }
 
     #[test]
@@ -7700,7 +7763,9 @@ mod json_tests {
 
     // 0xFx
     test_instruction!(test_F1, "f1.json", 0xF1);
+    test_instruction!(test_F3, "f3.json", 0xF3);
     test_instruction!(test_F5, "f5.json", 0xF5);
+    test_instruction!(test_F6, "f6.json", 0xF6);
     test_instruction!(test_F7, "f7.json", 0xF7);
     test_instruction!(test_FF, "ff.json", 0xFF);
 }
