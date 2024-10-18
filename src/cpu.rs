@@ -1636,7 +1636,7 @@ impl Cpu {
                 let sp = self.registers.sp;
                 let value = value as i16;
 
-                let (new_value, overflowed) = sp.overflowing_add_signed(value);
+                let new_value = sp.wrapping_add_signed(value);
 
                 self.registers.sp = new_value;
 
@@ -1644,7 +1644,7 @@ impl Cpu {
                 self.registers.f.set_n(false);
                 self.registers
                     .f
-                    .set_h((sp & 0x000F) + ((value as u16) & 0x000F) > 0x000F);
+                    .set_h((sp & 0x000F) + (value as u16 & 0x000F) > 0x000F);
                 self.registers
                     .f
                     .set_c((sp & 0x00FF) + (value as u16 & 0x00FF) > 0x00FF);
