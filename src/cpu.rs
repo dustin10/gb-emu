@@ -481,6 +481,9 @@ enum Operation {
     /// Bit rotate the `A` register left by one, not through the carry flag. Sets the zero flag to
     /// false.
     RLCA,
+    /// Bit rotate the value in memory at the address pointed to by the value in the `HL` register
+    /// left by one, not through the carry flag.
+    RLCHL,
     /// Bit rotate the [`Target`] register left by one, through the carry flag.
     RR { target: Target },
     /// Bit rotate the [`Target`] register right by one, not through the carry flag.
@@ -616,6 +619,7 @@ impl Display for Operation {
             },
             Operation::RLC { target } => f.write_fmt(format_args!("RLC {}", target)),
             Operation::RLCA => f.write_str("RLCA"),
+            Operation::RLCHL => f.write_fmt(format_args!("RLC [HL]")),
             Operation::RR { target } => match target {
                 Target::A => f.write_str("RRA"),
                 _ => f.write_fmt(format_args!("RR {}", target)),
@@ -1036,8 +1040,13 @@ impl Instruction {
     }
     /// Creates a new instruction that bit rotates the value in the `A` register left by one, not
     /// through the carry flag.
-    fn rlca() -> Self {
+    fn rlc_a() -> Self {
         Self::new(1, 4, Operation::RLCA)
+    }
+    /// Creates a new instruction that bit rotate the value in memory at the address pointed to
+    /// by the value in the `HL` register left by one, not through the carry flag.
+    fn rlc_hl() -> Self {
+        Self::new(1, 16, Operation::RLCHL)
     }
     /// Creates a new instruction that bit rotates the value in the [`Target`] register right by
     /// one through the carry flag.
@@ -1239,7 +1248,7 @@ impl Cpu {
                 Target8Bit::B,
                 memory.read_u8(self.registers.pc.wrapping_add(1)),
             )),
-            0x07 => Some(Instruction::rlca()),
+            0x07 => Some(Instruction::rlc_a()),
             0x08 => Some(Instruction::ld_a16(
                 memory.read_u16(self.registers.pc.wrapping_add(1)),
                 Target16Bit::SP,
@@ -1639,6 +1648,7 @@ impl Cpu {
             0x03 => Some(Instruction::rlc(Target8Bit::E)),
             0x04 => Some(Instruction::rlc(Target8Bit::H)),
             0x05 => Some(Instruction::rlc(Target8Bit::L)),
+            0x06 => Some(Instruction::rlc_hl()),
             0x07 => Some(Instruction::rlc(Target8Bit::A)),
 
             // invalid op code
@@ -2405,7 +2415,6 @@ impl Cpu {
                 self.registers.f.set_c(will_carry);
             }
             Operation::RLC { target } => {
-                println!("in RLC handler");
                 let mut value = match target {
                     Target8Bit::A => &mut self.registers.a,
                     Target8Bit::B => &mut self.registers.b,
@@ -2435,6 +2444,22 @@ impl Cpu {
                 self.registers.a = (a << 1) | (truncated_bit >> 7);
 
                 self.registers.f.set_z(false);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(will_carry);
+            }
+            Operation::RLCHL => {
+                let hl = self.registers.hl();
+                let value = memory.read_u8(hl);
+
+                let truncated_bit = value & (1 << 7);
+                let will_carry = truncated_bit != 0;
+
+                let new_value = (value << 1) | (truncated_bit >> 7);
+
+                memory.write_u8(hl, new_value);
+
+                self.registers.f.set_z(new_value == 0);
                 self.registers.f.set_n(false);
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(will_carry);
@@ -7782,6 +7807,18 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_prefixed_rlc_hl() {
+        let op_code: u8 = 0x06;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RLCHL, instruction.operation);
+    }
+
+    #[test]
     fn test_cpu_decode_prefixed_rlc_a() {
         let op_code: u8 = 0x07;
 
@@ -8234,5 +8271,6 @@ mod json_tests {
     test_prefixed_instruction!(test_CB03, "cb 03.json", 0x03);
     test_prefixed_instruction!(test_CB04, "cb 04.json", 0x04);
     test_prefixed_instruction!(test_CB05, "cb 05.json", 0x05);
+    test_prefixed_instruction!(test_CB06, "cb 06.json", 0x06);
     test_prefixed_instruction!(test_CB07, "cb 07.json", 0x07);
 }
