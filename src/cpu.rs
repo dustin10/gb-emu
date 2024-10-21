@@ -474,8 +474,14 @@ enum Operation {
     /// Pops from the memory stack the program counter value that was pushed to the
     /// stack when the subroutine was called and resumes allowing of interrupts.
     RETI,
-    /// Bit rotate the [`Target`] register left by one, through the carry flag.
-    RL { target: Target },
+    /// Bit rotate the [`Target8Bit`] register left by one, through the carry flag.
+    RL { target: Target8Bit },
+    /// Bit rotate the [`Target`] register left by one, through the carry flag. Sets the zero flag
+    /// to false.
+    RLA,
+    /// Bit rotate the value in memory at the address pointed to by the `HL`register left by one,
+    /// through the carry flag.
+    RLHL,
     /// Bit rotate the [`Target8Bit`] register left by one, not through the carry flag.
     RLC { target: Target8Bit },
     /// Bit rotate the `A` register left by one, not through the carry flag. Sets the zero flag to
@@ -625,10 +631,9 @@ impl Display for Operation {
             Operation::RET => f.write_str("RET"),
             Operation::RETC { target, .. } => f.write_fmt(format_args!("RET {}", target)),
             Operation::RETI => f.write_str("RETI"),
-            Operation::RL { target } => match target {
-                Target::A => f.write_str("RLA"),
-                _ => f.write_fmt(format_args!("RL {}", target)),
-            },
+            Operation::RL { target } => f.write_fmt(format_args!("RL {}", target)),
+            Operation::RLA => f.write_str("RLA"),
+            Operation::RLHL => f.write_str("RL [HL]"),
             Operation::RLC { target } => f.write_fmt(format_args!("RLC {}", target)),
             Operation::RLCA => f.write_str("RLCA"),
             Operation::RLCHL => f.write_fmt(format_args!("RLC [HL]")),
@@ -1033,15 +1038,20 @@ impl Instruction {
     fn reti() -> Self {
         Self::new(1, 16, Operation::RETI)
     }
-    /// Creates a new instruction that bit rotates the value in the [`Target`] register left by
-    /// one through the carry flag.
-    fn rl(target: Target) -> Self {
-        Self::new(1, 4, Operation::RL { target })
+    /// Creates a new instruction that bit rotates the value in the [`Target8Bit`] register left
+    /// by one through the carry flag.
+    fn rl(target: Target8Bit) -> Self {
+        Self::new(1, 8, Operation::RL { target })
     }
     /// Creates a new instruction that bit rotates the value in the `A` register left by one
-    /// through the carry flag.
-    fn rla() -> Self {
-        Self::rl(Target::A)
+    /// through the carry flag. Sets the zero flag to false.
+    fn rl_a() -> Self {
+        Self::new(1, 4, Operation::RLA)
+    }
+    /// Creates a new instruction that bit rotate the value in memory at the address pointed to
+    /// by the `HL`register left by one, through the carry flag.
+    fn rl_hl() -> Self {
+        Self::new(1, 16, Operation::RLHL)
     }
     /// Creates a new instruction that bit rotates the value in the [`Target`] register left by
     /// one, not through the carry flag.
@@ -1298,7 +1308,7 @@ impl Cpu {
                 Target8Bit::D,
                 memory.read_u8(self.registers.pc.wrapping_add(1)),
             )),
-            0x17 => Some(Instruction::rla()),
+            0x17 => Some(Instruction::rl_a()),
             0x18 => Some(Instruction::jr(
                 memory.read_i8(self.registers.pc.wrapping_add(1)),
             )),
@@ -1680,6 +1690,14 @@ impl Cpu {
             0x0F => Some(Instruction::rrc(Target8Bit::A)),
 
             // 0x1x
+            0x10 => Some(Instruction::rl(Target8Bit::B)),
+            0x11 => Some(Instruction::rl(Target8Bit::C)),
+            0x12 => Some(Instruction::rl(Target8Bit::D)),
+            0x13 => Some(Instruction::rl(Target8Bit::E)),
+            0x14 => Some(Instruction::rl(Target8Bit::H)),
+            0x15 => Some(Instruction::rl(Target8Bit::L)),
+            0x16 => Some(Instruction::rl_hl()),
+            0x17 => Some(Instruction::rl(Target8Bit::A)),
             0x18 => Some(Instruction::rr(Target8Bit::B)),
             0x19 => Some(Instruction::rr(Target8Bit::C)),
             0x1A => Some(Instruction::rr(Target8Bit::D)),
@@ -2435,11 +2453,15 @@ impl Cpu {
 
                 self.interruptable = true;
             }
-            // TODO: cleanup
             Operation::RL { target } => {
                 let mut value = match target {
-                    Target::A => &mut self.registers.a,
-                    _ => panic!("not implemented"),
+                    Target8Bit::A => &mut self.registers.a,
+                    Target8Bit::B => &mut self.registers.b,
+                    Target8Bit::C => &mut self.registers.c,
+                    Target8Bit::D => &mut self.registers.d,
+                    Target8Bit::E => &mut self.registers.e,
+                    Target8Bit::H => &mut self.registers.h,
+                    Target8Bit::L => &mut self.registers.l,
                 };
 
                 let carry: u8 = self.registers.f.c().into();
@@ -2447,7 +2469,36 @@ impl Cpu {
 
                 *value = (*value << 1) | carry;
 
+                self.registers.f.set_z(*value == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(will_carry);
+            }
+            Operation::RLA => {
+                let a = self.registers.a;
+
+                let carry: u8 = self.registers.f.c().into();
+                let will_carry = (a & (1 << 7)) != 0;
+
+                self.registers.a = (a << 1) | carry;
+
                 self.registers.f.set_z(false);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(will_carry);
+            }
+            Operation::RLHL => {
+                let hl = self.registers.hl();
+                let value = memory.read_u8(hl);
+
+                let carry: u8 = self.registers.f.c().into();
+                let will_carry = (value & (1 << 7)) != 0;
+
+                let new_value = (value << 1) | carry;
+
+                memory.write_u8(hl, new_value);
+
+                self.registers.f.set_z(new_value == 0);
                 self.registers.f.set_n(false);
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(will_carry);
@@ -3374,7 +3425,7 @@ mod tests {
         let instruction = cpu.decode(op_code, &memory).expect("valid op code");
         assert_eq!(1, instruction.num_bytes);
         assert_eq!(4, instruction.clock_ticks);
-        assert_eq!(Operation::RL { target: Target::A }, instruction.operation);
+        assert_eq!(Operation::RLA, instruction.operation);
     }
 
     #[test]
@@ -8071,6 +8122,137 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_decode_prefixed_rl_b() {
+        let op_code: u8 = 0x10;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RL {
+                target: Target8Bit::B
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rl_c() {
+        let op_code: u8 = 0x11;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RL {
+                target: Target8Bit::C
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rl_d() {
+        let op_code: u8 = 0x12;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RL {
+                target: Target8Bit::D
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rl_e() {
+        let op_code: u8 = 0x13;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RL {
+                target: Target8Bit::E
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rl_h() {
+        let op_code: u8 = 0x14;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RL {
+                target: Target8Bit::H
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rl_l() {
+        let op_code: u8 = 0x15;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RL {
+                target: Target8Bit::L
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rl_hl() {
+        let op_code: u8 = 0x16;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RLHL, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_rl_a() {
+        let op_code: u8 = 0x17;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RL {
+                target: Target8Bit::A
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
     fn test_cpu_decode_prefixed_rr_b() {
         let op_code: u8 = 0x18;
 
@@ -8649,6 +8831,14 @@ mod json_tests {
     test_prefixed_instruction!(test_CB0F, "cb 0F.json", 0x0F);
 
     // 0xCB1x
+    test_prefixed_instruction!(test_CB10, "cb 10.json", 0x10);
+    test_prefixed_instruction!(test_CB11, "cb 11.json", 0x11);
+    test_prefixed_instruction!(test_CB12, "cb 12.json", 0x12);
+    test_prefixed_instruction!(test_CB13, "cb 13.json", 0x13);
+    test_prefixed_instruction!(test_CB14, "cb 14.json", 0x14);
+    test_prefixed_instruction!(test_CB15, "cb 15.json", 0x15);
+    test_prefixed_instruction!(test_CB16, "cb 16.json", 0x16);
+    test_prefixed_instruction!(test_CB17, "cb 17.json", 0x17);
     test_prefixed_instruction!(test_CB18, "cb 18.json", 0x18);
     test_prefixed_instruction!(test_CB19, "cb 19.json", 0x19);
     test_prefixed_instruction!(test_CB1A, "cb 1A.json", 0x1A);
