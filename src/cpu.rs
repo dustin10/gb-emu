@@ -535,6 +535,10 @@ enum Operation {
     /// Subtracts the `u8` from the value in the `A` register and stores the result back into the `A`
     /// register.
     SUBAU8 { value: u8 },
+    /// Swaps the high and low nibbles of the value in the [`Target8Bit`] register.
+    SWAP { target: Target8Bit },
+    /// Swaps the high and low nibbles of the value in memory pointed to by the `HL` register.
+    SWAPHL,
     /// Takes the logical XOR for each bit of the contents of the [`Target8Bit`] register and the
     /// contents of the `A` register and stores the result back to the `A` register.
     XORA { target: Target8Bit },
@@ -660,6 +664,8 @@ impl Display for Operation {
             Operation::SUBA { target } => f.write_fmt(format_args!("SUB A, {}", target)),
             Operation::SUBAMEM => f.write_str("SUB A, [HL]"),
             Operation::SUBAU8 { value } => f.write_fmt(format_args!("SUB A, {:#4x}", value)),
+            Operation::SWAP { target } => f.write_fmt(format_args!("SWAP {}", target)),
+            Operation::SWAPHL => f.write_str("SWAP [HL]"),
             Operation::XORA { target } => f.write_fmt(format_args!("XOR A, {}", target)),
             Operation::XORAMEM => f.write_str("XOR A, [HL]"),
             Operation::XORAU8 { value } => f.write_fmt(format_args!("XOR A, {:#4x}", value)),
@@ -1171,6 +1177,16 @@ impl Instruction {
     /// stores the result back into the `A` register.
     fn sub_a_u8(value: u8) -> Self {
         Self::new(2, 8, Operation::SUBAU8 { value })
+    }
+    /// Creates a new instruction that swaps the high and low nibbles of the value in the
+    /// [`Target8Bit`] register.
+    fn swap(target: Target8Bit) -> Self {
+        Self::new(1, 8, Operation::SWAP { target })
+    }
+    /// Creates an instruction that swaps the high and low nibbles of the value in memory pointed
+    /// to by the `HL` register.
+    fn swap_hl() -> Self {
+        Self::new(1, 16, Operation::SWAPHL)
     }
     /// Creates a new instruction that takes the logical XOR for each bit of the contents of
     /// the [`Target8Bit`] register and the contents of the `A` register and stores the result
@@ -1752,6 +1768,16 @@ impl Cpu {
             0x2D => Some(Instruction::sra(Target8Bit::L)),
             0x2E => Some(Instruction::sra_hl()),
             0x2F => Some(Instruction::sra(Target8Bit::A)),
+
+            // 0x3x
+            0x30 => Some(Instruction::swap(Target8Bit::B)),
+            0x31 => Some(Instruction::swap(Target8Bit::C)),
+            0x32 => Some(Instruction::swap(Target8Bit::D)),
+            0x33 => Some(Instruction::swap(Target8Bit::E)),
+            0x34 => Some(Instruction::swap(Target8Bit::H)),
+            0x35 => Some(Instruction::swap(Target8Bit::L)),
+            0x36 => Some(Instruction::swap_hl()),
+            0x37 => Some(Instruction::swap(Target8Bit::A)),
 
             // invalid op code
             _ => None,
@@ -2920,6 +2946,43 @@ impl Cpu {
                 self.registers.f.set_n(true);
                 self.registers.f.set_h(will_half_carry_sub_u8(a, value));
                 self.registers.f.set_c(overflowed);
+            }
+            Operation::SWAP { target } => {
+                let value = match target {
+                    Target8Bit::A => &mut self.registers.a,
+                    Target8Bit::B => &mut self.registers.b,
+                    Target8Bit::C => &mut self.registers.c,
+                    Target8Bit::D => &mut self.registers.d,
+                    Target8Bit::E => &mut self.registers.e,
+                    Target8Bit::H => &mut self.registers.h,
+                    Target8Bit::L => &mut self.registers.l,
+                };
+
+                let low = *value >> 4;
+                let high = *value << 4;
+
+                *value = high | low;
+
+                self.registers.f.set_z(*value == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(false);
+            }
+            Operation::SWAPHL => {
+                let hl = self.registers.hl();
+                let value = memory.read_u8(hl);
+
+                let low = value >> 4;
+                let high = value << 4;
+
+                let new_value = high | low;
+
+                memory.write_u8(hl, new_value);
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(false);
             }
             Operation::XORA { target } => {
                 let target_value = match target {
@@ -8766,6 +8829,137 @@ mod tests {
             instruction.operation
         );
     }
+
+    #[test]
+    fn test_cpu_decode_prefixed_swap_b() {
+        let op_code: u8 = 0x30;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SWAP {
+                target: Target8Bit::B
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_swap_c() {
+        let op_code: u8 = 0x31;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SWAP {
+                target: Target8Bit::C
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_swap_d() {
+        let op_code: u8 = 0x32;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SWAP {
+                target: Target8Bit::D
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_swap_e() {
+        let op_code: u8 = 0x33;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SWAP {
+                target: Target8Bit::E
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_swap_h() {
+        let op_code: u8 = 0x34;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SWAP {
+                target: Target8Bit::H
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_swap_l() {
+        let op_code: u8 = 0x35;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SWAP {
+                target: Target8Bit::L
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_swap_hl() {
+        let op_code: u8 = 0x36;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::SWAPHL, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_swap_a() {
+        let op_code: u8 = 0x37;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SWAP {
+                target: Target8Bit::A
+            },
+            instruction.operation
+        );
+    }
 }
 
 #[cfg(test)]
@@ -9249,4 +9443,14 @@ mod json_tests {
     test_prefixed_instruction!(test_CB2D, "cb 2D.json");
     test_prefixed_instruction!(test_CB2E, "cb 2E.json");
     test_prefixed_instruction!(test_CB2F, "cb 2F.json");
+
+    // 0xCB3x
+    test_prefixed_instruction!(test_CB30, "cb 30.json");
+    test_prefixed_instruction!(test_CB31, "cb 31.json");
+    test_prefixed_instruction!(test_CB32, "cb 32.json");
+    test_prefixed_instruction!(test_CB33, "cb 33.json");
+    test_prefixed_instruction!(test_CB34, "cb 34.json");
+    test_prefixed_instruction!(test_CB35, "cb 35.json");
+    test_prefixed_instruction!(test_CB36, "cb 36.json");
+    test_prefixed_instruction!(test_CB37, "cb 37.json");
 }
