@@ -466,6 +466,10 @@ enum Operation {
     PREFIX,
     /// Pushes the contents of the [`PushPopTarget`] register onto the memory stack.
     PUSH { target: PushPopTarget },
+    /// Resets the `bit` in the [`Target8Bit`] register to 0.
+    RES { bit: u8, target: Target8Bit },
+    /// Resets the `bit` in the value in memory pointed to by the `HL` register to 0.
+    RESHL { bit: u8 },
     /// Pops from the memory stack the program counter value that was pushed to the
     /// stack when the subroutine was called.
     RET,
@@ -521,6 +525,10 @@ enum Operation {
     SBCAU8 { value: u8 },
     /// Sets the carry flag.
     SCF,
+    /// Sets the `bit` in the [`Target8Bit`] register to 1.
+    SET { bit: u8, target: Target8Bit },
+    /// Sets the `bit` in the value in memory pointed to by the `HL` register to 1.
+    SETHL { bit: u8 },
     /// Shift the contents of the [`Target8Bit`] register to the left by one.
     SLA { target: Target8Bit },
     /// Shift the value in memory pointed to by the `HL` register to the left by one.
@@ -652,6 +660,8 @@ impl Display for Operation {
             Operation::RET => f.write_str("RET"),
             Operation::RETC { target, .. } => f.write_fmt(format_args!("RET {}", target)),
             Operation::RETI => f.write_str("RETI"),
+            Operation::RES { bit, target } => f.write_fmt(format_args!("RES {}, {}", bit, target)),
+            Operation::RESHL { bit } => f.write_fmt(format_args!("RES {}, [HL]", bit)),
             Operation::RL { target } => f.write_fmt(format_args!("RL {}", target)),
             Operation::RLA => f.write_str("RLA"),
             Operation::RLHL => f.write_str("RL [HL]"),
@@ -669,6 +679,8 @@ impl Display for Operation {
             Operation::SBCAMEM => f.write_str("SBC A, [HL]"),
             Operation::SBCAU8 { value } => f.write_fmt(format_args!("SBC A, {:#4x}", value)),
             Operation::SCF => f.write_str("SCF"),
+            Operation::SET { bit, target } => f.write_fmt(format_args!("SET {}, {}", bit, target)),
+            Operation::SETHL { bit } => f.write_fmt(format_args!("SET {}, [HL]", bit)),
             Operation::SLA { target } => f.write_fmt(format_args!("SLA {}", target)),
             Operation::SLAHL => f.write_str("SLA [HL]"),
             Operation::SRA { target } => f.write_fmt(format_args!("SRA {}", target)),
@@ -1058,6 +1070,15 @@ impl Instruction {
     fn push(target: PushPopTarget) -> Self {
         Self::new(1, 16, Operation::PUSH { target })
     }
+    /// Creates a new instruction that resets the `bit` in the [`Target8Bit`] register to 0.
+    fn res(bit: u8, target: Target8Bit) -> Self {
+        Self::new(1, 8, Operation::RES { bit, target })
+    }
+    /// Creates a new instruction that resets the `bit` in the value in memory pointed to by
+    /// the `HL` register to 0.
+    fn res_hl(bit: u8) -> Self {
+        Self::new(1, 16, Operation::RESHL { bit })
+    }
     /// Creates a new instruction that pops from the memory stack the program counter value that
     /// was pushed to the stack when the subroutine was called based on the state of the
     /// [`CondJumpTarget`].
@@ -1162,6 +1183,16 @@ impl Instruction {
     /// Creates a new stop instruction that sets the carry flag.
     fn scf() -> Self {
         Self::new(1, 4, Operation::SCF)
+    }
+
+    /// Creates a new instruction that sets the `bit` in the [`Target8Bit`] register to 1.
+    fn set(bit: u8, target: Target8Bit) -> Self {
+        Self::new(1, 8, Operation::SET { bit, target })
+    }
+    /// Creates a new instruction that sets the `bit` in the value in memory pointed to by
+    /// the `HL` register to 1.
+    fn set_hl(bit: u8) -> Self {
+        Self::new(1, 16, Operation::SETHL { bit })
     }
     /// Creates a new instruction that shift the contents of the [`Target8Bit`] register to the
     /// left by one.
@@ -1894,8 +1925,149 @@ impl Cpu {
             0x7E => Some(Instruction::bit_hl(7)),
             0x7F => Some(Instruction::bit(7, Target8Bit::A)),
 
-            // invalid op code
-            _ => None,
+            // 0x8x
+            0x80 => Some(Instruction::res(0, Target8Bit::B)),
+            0x81 => Some(Instruction::res(0, Target8Bit::C)),
+            0x82 => Some(Instruction::res(0, Target8Bit::D)),
+            0x83 => Some(Instruction::res(0, Target8Bit::E)),
+            0x84 => Some(Instruction::res(0, Target8Bit::H)),
+            0x85 => Some(Instruction::res(0, Target8Bit::L)),
+            0x86 => Some(Instruction::res_hl(0)),
+            0x87 => Some(Instruction::res(0, Target8Bit::A)),
+            0x88 => Some(Instruction::res(1, Target8Bit::B)),
+            0x89 => Some(Instruction::res(1, Target8Bit::C)),
+            0x8A => Some(Instruction::res(1, Target8Bit::D)),
+            0x8B => Some(Instruction::res(1, Target8Bit::E)),
+            0x8C => Some(Instruction::res(1, Target8Bit::H)),
+            0x8D => Some(Instruction::res(1, Target8Bit::L)),
+            0x8E => Some(Instruction::res_hl(1)),
+            0x8F => Some(Instruction::res(1, Target8Bit::A)),
+
+            // 0x9x
+            0x90 => Some(Instruction::res(2, Target8Bit::B)),
+            0x91 => Some(Instruction::res(2, Target8Bit::C)),
+            0x92 => Some(Instruction::res(2, Target8Bit::D)),
+            0x93 => Some(Instruction::res(2, Target8Bit::E)),
+            0x94 => Some(Instruction::res(2, Target8Bit::H)),
+            0x95 => Some(Instruction::res(2, Target8Bit::L)),
+            0x96 => Some(Instruction::res_hl(2)),
+            0x97 => Some(Instruction::res(2, Target8Bit::A)),
+            0x98 => Some(Instruction::res(3, Target8Bit::B)),
+            0x99 => Some(Instruction::res(3, Target8Bit::C)),
+            0x9A => Some(Instruction::res(3, Target8Bit::D)),
+            0x9B => Some(Instruction::res(3, Target8Bit::E)),
+            0x9C => Some(Instruction::res(3, Target8Bit::H)),
+            0x9D => Some(Instruction::res(3, Target8Bit::L)),
+            0x9E => Some(Instruction::res_hl(3)),
+            0x9F => Some(Instruction::res(3, Target8Bit::A)),
+
+            // 0xAx
+            0xA0 => Some(Instruction::res(4, Target8Bit::B)),
+            0xA1 => Some(Instruction::res(4, Target8Bit::C)),
+            0xA2 => Some(Instruction::res(4, Target8Bit::D)),
+            0xA3 => Some(Instruction::res(4, Target8Bit::E)),
+            0xA4 => Some(Instruction::res(4, Target8Bit::H)),
+            0xA5 => Some(Instruction::res(4, Target8Bit::L)),
+            0xA6 => Some(Instruction::res_hl(4)),
+            0xA7 => Some(Instruction::res(4, Target8Bit::A)),
+            0xA8 => Some(Instruction::res(5, Target8Bit::B)),
+            0xA9 => Some(Instruction::res(5, Target8Bit::C)),
+            0xAA => Some(Instruction::res(5, Target8Bit::D)),
+            0xAB => Some(Instruction::res(5, Target8Bit::E)),
+            0xAC => Some(Instruction::res(5, Target8Bit::H)),
+            0xAD => Some(Instruction::res(5, Target8Bit::L)),
+            0xAE => Some(Instruction::res_hl(5)),
+            0xAF => Some(Instruction::res(5, Target8Bit::A)),
+
+            // 0xBx
+            0xB0 => Some(Instruction::res(6, Target8Bit::B)),
+            0xB1 => Some(Instruction::res(6, Target8Bit::C)),
+            0xB2 => Some(Instruction::res(6, Target8Bit::D)),
+            0xB3 => Some(Instruction::res(6, Target8Bit::E)),
+            0xB4 => Some(Instruction::res(6, Target8Bit::H)),
+            0xB5 => Some(Instruction::res(6, Target8Bit::L)),
+            0xB6 => Some(Instruction::res_hl(6)),
+            0xB7 => Some(Instruction::res(6, Target8Bit::A)),
+            0xB8 => Some(Instruction::res(7, Target8Bit::B)),
+            0xB9 => Some(Instruction::res(7, Target8Bit::C)),
+            0xBA => Some(Instruction::res(7, Target8Bit::D)),
+            0xBB => Some(Instruction::res(7, Target8Bit::E)),
+            0xBC => Some(Instruction::res(7, Target8Bit::H)),
+            0xBD => Some(Instruction::res(7, Target8Bit::L)),
+            0xBE => Some(Instruction::res_hl(7)),
+            0xBF => Some(Instruction::res(7, Target8Bit::A)),
+
+            // 0xCx
+            0xC0 => Some(Instruction::set(0, Target8Bit::B)),
+            0xC1 => Some(Instruction::set(0, Target8Bit::C)),
+            0xC2 => Some(Instruction::set(0, Target8Bit::D)),
+            0xC3 => Some(Instruction::set(0, Target8Bit::E)),
+            0xC4 => Some(Instruction::set(0, Target8Bit::H)),
+            0xC5 => Some(Instruction::set(0, Target8Bit::L)),
+            0xC6 => Some(Instruction::set_hl(0)),
+            0xC7 => Some(Instruction::set(0, Target8Bit::A)),
+            0xC8 => Some(Instruction::set(1, Target8Bit::B)),
+            0xC9 => Some(Instruction::set(1, Target8Bit::C)),
+            0xCA => Some(Instruction::set(1, Target8Bit::D)),
+            0xCB => Some(Instruction::set(1, Target8Bit::E)),
+            0xCC => Some(Instruction::set(1, Target8Bit::H)),
+            0xCD => Some(Instruction::set(1, Target8Bit::L)),
+            0xCE => Some(Instruction::set_hl(1)),
+            0xCF => Some(Instruction::set(1, Target8Bit::A)),
+
+            // 0xDx
+            0xD0 => Some(Instruction::set(2, Target8Bit::B)),
+            0xD1 => Some(Instruction::set(2, Target8Bit::C)),
+            0xD2 => Some(Instruction::set(2, Target8Bit::D)),
+            0xD3 => Some(Instruction::set(2, Target8Bit::E)),
+            0xD4 => Some(Instruction::set(2, Target8Bit::H)),
+            0xD5 => Some(Instruction::set(2, Target8Bit::L)),
+            0xD6 => Some(Instruction::set_hl(2)),
+            0xD7 => Some(Instruction::set(2, Target8Bit::A)),
+            0xD8 => Some(Instruction::set(3, Target8Bit::B)),
+            0xD9 => Some(Instruction::set(3, Target8Bit::C)),
+            0xDA => Some(Instruction::set(3, Target8Bit::D)),
+            0xDB => Some(Instruction::set(3, Target8Bit::E)),
+            0xDC => Some(Instruction::set(3, Target8Bit::H)),
+            0xDD => Some(Instruction::set(3, Target8Bit::L)),
+            0xDE => Some(Instruction::set_hl(3)),
+            0xDF => Some(Instruction::set(3, Target8Bit::A)),
+
+            // 0xEx
+            0xE0 => Some(Instruction::set(4, Target8Bit::B)),
+            0xE1 => Some(Instruction::set(4, Target8Bit::C)),
+            0xE2 => Some(Instruction::set(4, Target8Bit::D)),
+            0xE3 => Some(Instruction::set(4, Target8Bit::E)),
+            0xE4 => Some(Instruction::set(4, Target8Bit::H)),
+            0xE5 => Some(Instruction::set(4, Target8Bit::L)),
+            0xE6 => Some(Instruction::set_hl(4)),
+            0xE7 => Some(Instruction::set(4, Target8Bit::A)),
+            0xE8 => Some(Instruction::set(5, Target8Bit::B)),
+            0xE9 => Some(Instruction::set(5, Target8Bit::C)),
+            0xEA => Some(Instruction::set(5, Target8Bit::D)),
+            0xEB => Some(Instruction::set(5, Target8Bit::E)),
+            0xEC => Some(Instruction::set(5, Target8Bit::H)),
+            0xED => Some(Instruction::set(5, Target8Bit::L)),
+            0xEE => Some(Instruction::set_hl(5)),
+            0xEF => Some(Instruction::set(5, Target8Bit::A)),
+
+            // 0xFx
+            0xF0 => Some(Instruction::set(6, Target8Bit::B)),
+            0xF1 => Some(Instruction::set(6, Target8Bit::C)),
+            0xF2 => Some(Instruction::set(6, Target8Bit::D)),
+            0xF3 => Some(Instruction::set(6, Target8Bit::E)),
+            0xF4 => Some(Instruction::set(6, Target8Bit::H)),
+            0xF5 => Some(Instruction::set(6, Target8Bit::L)),
+            0xF6 => Some(Instruction::set_hl(6)),
+            0xF7 => Some(Instruction::set(6, Target8Bit::A)),
+            0xF8 => Some(Instruction::set(7, Target8Bit::B)),
+            0xF9 => Some(Instruction::set(7, Target8Bit::C)),
+            0xFA => Some(Instruction::set(7, Target8Bit::D)),
+            0xFB => Some(Instruction::set(7, Target8Bit::E)),
+            0xFC => Some(Instruction::set(7, Target8Bit::H)),
+            0xFD => Some(Instruction::set(7, Target8Bit::L)),
+            0xFE => Some(Instruction::set_hl(7)),
+            0xFF => Some(Instruction::set(7, Target8Bit::A)),
         }
     }
     /// Executes the given [`Instruction`] returning the new program counter value and whether or
@@ -2639,6 +2811,27 @@ impl Cpu {
                 self.registers.sp = self.registers.sp.wrapping_sub(1);
                 memory.write_u8(self.registers.sp, value as u8);
             }
+            Operation::RES { bit, target } => {
+                let value = match target {
+                    Target8Bit::A => &mut self.registers.a,
+                    Target8Bit::B => &mut self.registers.b,
+                    Target8Bit::C => &mut self.registers.c,
+                    Target8Bit::D => &mut self.registers.d,
+                    Target8Bit::E => &mut self.registers.e,
+                    Target8Bit::H => &mut self.registers.h,
+                    Target8Bit::L => &mut self.registers.l,
+                };
+
+                *value &= !(1 << bit);
+            }
+            Operation::RESHL { bit } => {
+                let hl = self.registers.hl();
+                let value = memory.read_u8(hl);
+
+                let new_value = value & !(1 << bit);
+
+                memory.write_u8(hl, new_value);
+            }
             Operation::RET => {
                 let low = memory.read_u8(self.registers.sp) as u16;
                 self.registers.sp = self.registers.sp.wrapping_add(1);
@@ -2952,6 +3145,27 @@ impl Cpu {
                 self.registers.f.set_n(false);
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(true);
+            }
+            Operation::SET { bit, target } => {
+                let value = match target {
+                    Target8Bit::A => &mut self.registers.a,
+                    Target8Bit::B => &mut self.registers.b,
+                    Target8Bit::C => &mut self.registers.c,
+                    Target8Bit::D => &mut self.registers.d,
+                    Target8Bit::E => &mut self.registers.e,
+                    Target8Bit::H => &mut self.registers.h,
+                    Target8Bit::L => &mut self.registers.l,
+                };
+
+                *value |= 1 << bit;
+            }
+            Operation::SETHL { bit } => {
+                let hl = self.registers.hl();
+                let value = memory.read_u8(hl);
+
+                let new_value = value | (1 << bit);
+
+                memory.write_u8(hl, new_value);
             }
             Operation::SLA { target } => {
                 let value = match target {
@@ -9298,6 +9512,66 @@ mod tests {
         assert_eq!(12, instruction.clock_ticks);
         assert_eq!(Operation::BITHL { bit: 0 }, instruction.operation);
     }
+
+    #[test]
+    fn test_cpu_decode_prefixed_res_0_b() {
+        let op_code: u8 = 0x80;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::RES {
+                bit: 0,
+                target: Target8Bit::B
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_res_hl_0() {
+        let op_code: u8 = 0x86;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::RESHL { bit: 0 }, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_set_0_b() {
+        let op_code: u8 = 0xC0;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SET {
+                bit: 0,
+                target: Target8Bit::B
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_set_hl_0() {
+        let op_code: u8 = 0xC6;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::SETHL { bit: 0 }, instruction.operation);
+    }
 }
 
 #[cfg(test)]
@@ -9871,4 +10145,148 @@ mod json_tests {
     test_prefixed_instruction!(test_CB7D, "cb 7D.json");
     test_prefixed_instruction!(test_CB7E, "cb 7E.json");
     test_prefixed_instruction!(test_CB7F, "cb 7F.json");
+
+    // 0xCB8x
+    test_prefixed_instruction!(test_CB80, "cb 80.json");
+    test_prefixed_instruction!(test_CB81, "cb 81.json");
+    test_prefixed_instruction!(test_CB82, "cb 82.json");
+    test_prefixed_instruction!(test_CB83, "cb 83.json");
+    test_prefixed_instruction!(test_CB84, "cb 84.json");
+    test_prefixed_instruction!(test_CB85, "cb 85.json");
+    test_prefixed_instruction!(test_CB86, "cb 86.json");
+    test_prefixed_instruction!(test_CB87, "cb 87.json");
+    test_prefixed_instruction!(test_CB88, "cb 88.json");
+    test_prefixed_instruction!(test_CB89, "cb 89.json");
+    test_prefixed_instruction!(test_CB8A, "cb 8A.json");
+    test_prefixed_instruction!(test_CB8B, "cb 8B.json");
+    test_prefixed_instruction!(test_CB8C, "cb 8C.json");
+    test_prefixed_instruction!(test_CB8D, "cb 8D.json");
+    test_prefixed_instruction!(test_CB8E, "cb 8E.json");
+    test_prefixed_instruction!(test_CB8F, "cb 8F.json");
+
+    // 0xCB9x
+    test_prefixed_instruction!(test_CB90, "cb 90.json");
+    test_prefixed_instruction!(test_CB91, "cb 91.json");
+    test_prefixed_instruction!(test_CB92, "cb 92.json");
+    test_prefixed_instruction!(test_CB93, "cb 93.json");
+    test_prefixed_instruction!(test_CB94, "cb 94.json");
+    test_prefixed_instruction!(test_CB95, "cb 95.json");
+    test_prefixed_instruction!(test_CB96, "cb 96.json");
+    test_prefixed_instruction!(test_CB97, "cb 97.json");
+    test_prefixed_instruction!(test_CB98, "cb 98.json");
+    test_prefixed_instruction!(test_CB99, "cb 99.json");
+    test_prefixed_instruction!(test_CB9A, "cb 9A.json");
+    test_prefixed_instruction!(test_CB9B, "cb 9B.json");
+    test_prefixed_instruction!(test_CB9C, "cb 9C.json");
+    test_prefixed_instruction!(test_CB9D, "cb 9D.json");
+    test_prefixed_instruction!(test_CB9E, "cb 9E.json");
+    test_prefixed_instruction!(test_CB9F, "cb 9F.json");
+
+    // 0xCBAx
+    test_prefixed_instruction!(test_CBA0, "cb A0.json");
+    test_prefixed_instruction!(test_CBA1, "cb A1.json");
+    test_prefixed_instruction!(test_CBA2, "cb A2.json");
+    test_prefixed_instruction!(test_CBA3, "cb A3.json");
+    test_prefixed_instruction!(test_CBA4, "cb A4.json");
+    test_prefixed_instruction!(test_CBA5, "cb A5.json");
+    test_prefixed_instruction!(test_CBA6, "cb A6.json");
+    test_prefixed_instruction!(test_CBA7, "cb A7.json");
+    test_prefixed_instruction!(test_CBA8, "cb A8.json");
+    test_prefixed_instruction!(test_CBA9, "cb A9.json");
+    test_prefixed_instruction!(test_CBAA, "cb AA.json");
+    test_prefixed_instruction!(test_CBAB, "cb AB.json");
+    test_prefixed_instruction!(test_CBAC, "cb AC.json");
+    test_prefixed_instruction!(test_CBAD, "cb AD.json");
+    test_prefixed_instruction!(test_CBAE, "cb AE.json");
+    test_prefixed_instruction!(test_CBAF, "cb AF.json");
+
+    // 0xCBBx
+    test_prefixed_instruction!(test_CBB0, "cb B0.json");
+    test_prefixed_instruction!(test_CBB1, "cb B1.json");
+    test_prefixed_instruction!(test_CBB2, "cb B2.json");
+    test_prefixed_instruction!(test_CBB3, "cb B3.json");
+    test_prefixed_instruction!(test_CBB4, "cb B4.json");
+    test_prefixed_instruction!(test_CBB5, "cb B5.json");
+    test_prefixed_instruction!(test_CBB6, "cb B6.json");
+    test_prefixed_instruction!(test_CBB7, "cb B7.json");
+    test_prefixed_instruction!(test_CBB8, "cb B8.json");
+    test_prefixed_instruction!(test_CBB9, "cb B9.json");
+    test_prefixed_instruction!(test_CBBA, "cb BA.json");
+    test_prefixed_instruction!(test_CBBB, "cb BB.json");
+    test_prefixed_instruction!(test_CBBC, "cb BC.json");
+    test_prefixed_instruction!(test_CBBD, "cb BD.json");
+    test_prefixed_instruction!(test_CBBE, "cb BE.json");
+    test_prefixed_instruction!(test_CBBF, "cb BF.json");
+
+    // 0xCBCx
+    test_prefixed_instruction!(test_CBC0, "cb C0.json");
+    test_prefixed_instruction!(test_CBC1, "cb C1.json");
+    test_prefixed_instruction!(test_CBC2, "cb C2.json");
+    test_prefixed_instruction!(test_CBC3, "cb C3.json");
+    test_prefixed_instruction!(test_CBC4, "cb C4.json");
+    test_prefixed_instruction!(test_CBC5, "cb C5.json");
+    test_prefixed_instruction!(test_CBC6, "cb C6.json");
+    test_prefixed_instruction!(test_CBC7, "cb C7.json");
+    test_prefixed_instruction!(test_CBC8, "cb C8.json");
+    test_prefixed_instruction!(test_CBC9, "cb C9.json");
+    test_prefixed_instruction!(test_CBCA, "cb CA.json");
+    test_prefixed_instruction!(test_CBCB, "cb CB.json");
+    test_prefixed_instruction!(test_CBCC, "cb CC.json");
+    test_prefixed_instruction!(test_CBCD, "cb CD.json");
+    test_prefixed_instruction!(test_CBCE, "cb CE.json");
+    test_prefixed_instruction!(test_CBCF, "cb CF.json");
+
+    // 0xCBDx
+    test_prefixed_instruction!(test_CBD0, "cb D0.json");
+    test_prefixed_instruction!(test_CBD1, "cb D1.json");
+    test_prefixed_instruction!(test_CBD2, "cb D2.json");
+    test_prefixed_instruction!(test_CBD3, "cb D3.json");
+    test_prefixed_instruction!(test_CBD4, "cb D4.json");
+    test_prefixed_instruction!(test_CBD5, "cb D5.json");
+    test_prefixed_instruction!(test_CBD6, "cb D6.json");
+    test_prefixed_instruction!(test_CBD7, "cb D7.json");
+    test_prefixed_instruction!(test_CBD8, "cb D8.json");
+    test_prefixed_instruction!(test_CBD9, "cb D9.json");
+    test_prefixed_instruction!(test_CBDA, "cb DA.json");
+    test_prefixed_instruction!(test_CBDB, "cb DB.json");
+    test_prefixed_instruction!(test_CBDC, "cb DC.json");
+    test_prefixed_instruction!(test_CBDD, "cb DD.json");
+    test_prefixed_instruction!(test_CBDE, "cb DE.json");
+    test_prefixed_instruction!(test_CBDF, "cb DF.json");
+
+    // 0xCBEx
+    test_prefixed_instruction!(test_CBE0, "cb E0.json");
+    test_prefixed_instruction!(test_CBE1, "cb E1.json");
+    test_prefixed_instruction!(test_CBE2, "cb E2.json");
+    test_prefixed_instruction!(test_CBE3, "cb E3.json");
+    test_prefixed_instruction!(test_CBE4, "cb E4.json");
+    test_prefixed_instruction!(test_CBE5, "cb E5.json");
+    test_prefixed_instruction!(test_CBE6, "cb E6.json");
+    test_prefixed_instruction!(test_CBE7, "cb E7.json");
+    test_prefixed_instruction!(test_CBE8, "cb E8.json");
+    test_prefixed_instruction!(test_CBE9, "cb E9.json");
+    test_prefixed_instruction!(test_CBEA, "cb EA.json");
+    test_prefixed_instruction!(test_CBEB, "cb EB.json");
+    test_prefixed_instruction!(test_CBEC, "cb EC.json");
+    test_prefixed_instruction!(test_CBED, "cb ED.json");
+    test_prefixed_instruction!(test_CBEE, "cb EE.json");
+    test_prefixed_instruction!(test_CBEF, "cb EF.json");
+
+    // 0xCBFx
+    test_prefixed_instruction!(test_CBF0, "cb F0.json");
+    test_prefixed_instruction!(test_CBF1, "cb F1.json");
+    test_prefixed_instruction!(test_CBF2, "cb F2.json");
+    test_prefixed_instruction!(test_CBF3, "cb F3.json");
+    test_prefixed_instruction!(test_CBF4, "cb F4.json");
+    test_prefixed_instruction!(test_CBF5, "cb F5.json");
+    test_prefixed_instruction!(test_CBF6, "cb F6.json");
+    test_prefixed_instruction!(test_CBF7, "cb F7.json");
+    test_prefixed_instruction!(test_CBF8, "cb F8.json");
+    test_prefixed_instruction!(test_CBF9, "cb F9.json");
+    test_prefixed_instruction!(test_CBFA, "cb FA.json");
+    test_prefixed_instruction!(test_CBFB, "cb FB.json");
+    test_prefixed_instruction!(test_CBFC, "cb FC.json");
+    test_prefixed_instruction!(test_CBFD, "cb FD.json");
+    test_prefixed_instruction!(test_CBFE, "cb FE.json");
+    test_prefixed_instruction!(test_CBFF, "cb FF.json");
 }
