@@ -524,6 +524,12 @@ enum Operation {
     SRA { target: Target8Bit },
     /// Shift the value in memory pointed to by the `HL` register to the right by one.
     SRAHL,
+    /// Shift the contents of the [`Target8Bit`] register to the right by one. Sets the last bit of
+    /// the register value to 0.
+    SRL { target: Target8Bit },
+    /// Shift the value in memory pointed to by the `HL` register to the right by one. Sets the
+    /// last bit of the value in memory to 0.
+    SRLHL,
     /// Stops the system clock and stop mode is entered.
     STOP,
     /// Subtracts the value in the [`Target8Bit`] register from the value in the `A` register
@@ -660,6 +666,8 @@ impl Display for Operation {
             Operation::SLAHL => f.write_str("SLA [HL]"),
             Operation::SRA { target } => f.write_fmt(format_args!("SRA {}", target)),
             Operation::SRAHL => f.write_str("SRA [HL]"),
+            Operation::SRL { target } => f.write_fmt(format_args!("SRL {}", target)),
+            Operation::SRLHL => f.write_str("SRL [HL]"),
             Operation::STOP => f.write_str("STOP"),
             Operation::SUBA { target } => f.write_fmt(format_args!("SUB A, {}", target)),
             Operation::SUBAMEM => f.write_str("SUB A, [HL]"),
@@ -1157,6 +1165,16 @@ impl Instruction {
     /// to the right by one.
     fn sra_hl() -> Self {
         Self::new(1, 16, Operation::SRAHL)
+    }
+    /// Creates a new instruction that shift the contents of the [`Target8Bit`] register to the
+    /// right by one. Sets the last bit of the register value to 0.
+    fn srl(target: Target8Bit) -> Self {
+        Self::new(1, 8, Operation::SRL { target })
+    }
+    /// Creates a new instruction that shift the value in memory pointed to by the `HL` register
+    /// to the right by one. Sets the last bit of the value in memory to 0.
+    fn srl_hl() -> Self {
+        Self::new(1, 16, Operation::SRLHL)
     }
     /// Creates a new stop instruction that is akin to [`Operation::NOP`] for the emulator.
     fn stop() -> Self {
@@ -1778,6 +1796,15 @@ impl Cpu {
             0x35 => Some(Instruction::swap(Target8Bit::L)),
             0x36 => Some(Instruction::swap_hl()),
             0x37 => Some(Instruction::swap(Target8Bit::A)),
+
+            0x38 => Some(Instruction::srl(Target8Bit::B)),
+            0x39 => Some(Instruction::srl(Target8Bit::C)),
+            0x3A => Some(Instruction::srl(Target8Bit::D)),
+            0x3B => Some(Instruction::srl(Target8Bit::E)),
+            0x3C => Some(Instruction::srl(Target8Bit::H)),
+            0x3D => Some(Instruction::srl(Target8Bit::L)),
+            0x3E => Some(Instruction::srl_hl()),
+            0x3F => Some(Instruction::srl(Target8Bit::A)),
 
             // invalid op code
             _ => None,
@@ -2887,6 +2914,41 @@ impl Cpu {
                 } else {
                     new_value & !(1 << 7)
                 };
+
+                memory.write_u8(hl, new_value);
+
+                self.registers.f.set_z(new_value == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(will_carry);
+            }
+            Operation::SRL { target } => {
+                let value = match target {
+                    Target8Bit::A => &mut self.registers.a,
+                    Target8Bit::B => &mut self.registers.b,
+                    Target8Bit::C => &mut self.registers.c,
+                    Target8Bit::D => &mut self.registers.d,
+                    Target8Bit::E => &mut self.registers.e,
+                    Target8Bit::H => &mut self.registers.h,
+                    Target8Bit::L => &mut self.registers.l,
+                };
+
+                let will_carry = *value & 1 != 0;
+
+                *value >>= 1;
+
+                self.registers.f.set_z(*value == 0);
+                self.registers.f.set_n(false);
+                self.registers.f.set_h(false);
+                self.registers.f.set_c(will_carry);
+            }
+            Operation::SRLHL => {
+                let hl = self.registers.hl();
+                let value = memory.read_u8(hl);
+
+                let will_carry = value & 1 != 0;
+
+                let new_value = value >> 1;
 
                 memory.write_u8(hl, new_value);
 
@@ -8960,6 +9022,137 @@ mod tests {
             instruction.operation
         );
     }
+
+    #[test]
+    fn test_cpu_decode_prefixed_srl_b() {
+        let op_code: u8 = 0x38;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SRL {
+                target: Target8Bit::B
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_srl_c() {
+        let op_code: u8 = 0x39;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SRL {
+                target: Target8Bit::C
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_srl_d() {
+        let op_code: u8 = 0x3A;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SRL {
+                target: Target8Bit::D
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_srl_e() {
+        let op_code: u8 = 0x3B;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SRL {
+                target: Target8Bit::E
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_srl_h() {
+        let op_code: u8 = 0x3C;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SRL {
+                target: Target8Bit::H
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_srl_l() {
+        let op_code: u8 = 0x3D;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SRL {
+                target: Target8Bit::L
+            },
+            instruction.operation
+        );
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_srl_hl() {
+        let op_code: u8 = 0x3E;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(16, instruction.clock_ticks);
+        assert_eq!(Operation::SRLHL, instruction.operation);
+    }
+
+    #[test]
+    fn test_cpu_decode_prefixed_srl_a() {
+        let op_code: u8 = 0x3F;
+
+        let cpu = Cpu::new();
+
+        let instruction = cpu.decode_prefixed(op_code).expect("valid op code");
+        assert_eq!(1, instruction.num_bytes);
+        assert_eq!(8, instruction.clock_ticks);
+        assert_eq!(
+            Operation::SRL {
+                target: Target8Bit::A
+            },
+            instruction.operation
+        );
+    }
 }
 
 #[cfg(test)]
@@ -9453,4 +9646,12 @@ mod json_tests {
     test_prefixed_instruction!(test_CB35, "cb 35.json");
     test_prefixed_instruction!(test_CB36, "cb 36.json");
     test_prefixed_instruction!(test_CB37, "cb 37.json");
+    test_prefixed_instruction!(test_CB38, "cb 38.json");
+    test_prefixed_instruction!(test_CB39, "cb 39.json");
+    test_prefixed_instruction!(test_CB3A, "cb 3A.json");
+    test_prefixed_instruction!(test_CB3B, "cb 3B.json");
+    test_prefixed_instruction!(test_CB3C, "cb 3C.json");
+    test_prefixed_instruction!(test_CB3D, "cb 3D.json");
+    test_prefixed_instruction!(test_CB3E, "cb 3E.json");
+    test_prefixed_instruction!(test_CB3F, "cb 3F.json");
 }
