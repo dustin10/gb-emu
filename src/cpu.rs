@@ -96,10 +96,6 @@ const FLAGS_ZERO_BIT_POSITION: u8 = 7;
 struct Flags(u8);
 
 impl Flags {
-    /// Creates a new default [`Flags`].
-    fn new() -> Self {
-        Self::default()
-    }
     /// Retrieves the current status of the carry flag.
     fn c(&self) -> bool {
         (self.0 >> FLAGS_CARRY_BIT_POSITION) & 1 != 0
@@ -2056,7 +2052,7 @@ impl Cpu {
                     correction |= 0x60;
                 }
 
-                if (self.registers.f.n()) {
+                if self.registers.f.n() {
                     value = ((value as u16).wrapping_sub(correction)) as u8;
                 } else {
                     value = ((value as u16).wrapping_add(correction)) as u8;
@@ -2504,7 +2500,7 @@ impl Cpu {
                 self.interruptable = true;
             }
             Operation::RL { target } => {
-                let mut value = match target {
+                let value = match target {
                     Target8Bit::A => &mut self.registers.a,
                     Target8Bit::B => &mut self.registers.b,
                     Target8Bit::C => &mut self.registers.c,
@@ -2554,7 +2550,7 @@ impl Cpu {
                 self.registers.f.set_c(will_carry);
             }
             Operation::RLC { target } => {
-                let mut value = match target {
+                let value = match target {
                     Target8Bit::A => &mut self.registers.a,
                     Target8Bit::B => &mut self.registers.b,
                     Target8Bit::C => &mut self.registers.c,
@@ -2604,7 +2600,7 @@ impl Cpu {
                 self.registers.f.set_c(will_carry);
             }
             Operation::RR { target } => {
-                let mut value = match target {
+                let value = match target {
                     Target8Bit::A => &mut self.registers.a,
                     Target8Bit::B => &mut self.registers.b,
                     Target8Bit::C => &mut self.registers.c,
@@ -2654,7 +2650,7 @@ impl Cpu {
                 self.registers.f.set_c(will_carry);
             }
             Operation::RRC { target } => {
-                let mut value = match target {
+                let value = match target {
                     Target8Bit::A => &mut self.registers.a,
                     Target8Bit::B => &mut self.registers.b,
                     Target8Bit::C => &mut self.registers.c,
@@ -2790,7 +2786,7 @@ impl Cpu {
                 self.registers.f.set_c(true);
             }
             Operation::SLA { target } => {
-                let mut value = match target {
+                let value = match target {
                     Target8Bit::A => &mut self.registers.a,
                     Target8Bit::B => &mut self.registers.b,
                     Target8Bit::C => &mut self.registers.c,
@@ -2802,7 +2798,7 @@ impl Cpu {
 
                 let will_carry = *value & (1 << 7) != 0;
 
-                *value = *value << 1;
+                *value <<= 1;
 
                 self.registers.f.set_z(*value == 0);
                 self.registers.f.set_n(false);
@@ -2825,7 +2821,7 @@ impl Cpu {
                 self.registers.f.set_c(will_carry);
             }
             Operation::SRA { target } => {
-                let mut value = match target {
+                let value = match target {
                     Target8Bit::A => &mut self.registers.a,
                     Target8Bit::B => &mut self.registers.b,
                     Target8Bit::C => &mut self.registers.c,
@@ -2963,8 +2959,6 @@ impl Cpu {
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(false);
             }
-
-            _ => todo!(),
         }
     }
 }
@@ -2985,19 +2979,13 @@ fn will_half_carry_sub_u8(a: u8, b: u8) -> bool {
     (((a & 0x0F) as i32) - ((b & 0x0F) as i32)) < 0
 }
 
-/// Detrmines if the subtraction of `b` from `a` will cause a half-carry. The half carry is
-/// calculated on the 11th bit.
-fn will_half_carry_sub_u16(a: u16, b: u16) -> bool {
-    (((a & 0x0FFF) as i32) - ((b & 0x0FFF) as i32)) < 0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_flags_c() {
-        let mut flags = Flags::new();
+        let mut flags = Flags::default();
         assert!(!flags.c());
 
         flags.set_c(true);
@@ -3010,7 +2998,7 @@ mod tests {
 
     #[test]
     fn test_flags_h() {
-        let mut flags = Flags::new();
+        let mut flags = Flags::default();
         assert!(!flags.h());
 
         flags.set_h(true);
@@ -3023,7 +3011,7 @@ mod tests {
 
     #[test]
     fn test_flags_n() {
-        let mut flags = Flags::new();
+        let mut flags = Flags::default();
         assert!(!flags.n());
 
         flags.set_n(true);
@@ -3036,7 +3024,7 @@ mod tests {
 
     #[test]
     fn test_flags_z() {
-        let mut flags = Flags::new();
+        let mut flags = Flags::default();
         assert!(!flags.z());
 
         flags.set_z(true);
@@ -8833,16 +8821,16 @@ mod json_tests {
     ///
     /// This function will panic if the JSON file cannot be read or if it cannot be successfully
     /// deserialzied into a [`Vec`] of [`Test`].
-    fn test_json_file(file_name: &str, op_code: u8, instruction_set: InstructionSet) {
+    fn test_json_file(file_name: &str, instruction_set: InstructionSet) {
         read_json_file(file_name)
             .and_then(deserialize_json)
             .expect("valid test JSON files")
             .into_iter()
-            .for_each(|t| execute(op_code, t, instruction_set));
+            .for_each(|t| execute(t, instruction_set));
     }
 
     /// Executes a [`Test`] for the given instruction op code.
-    fn execute(op_code: u8, test: Test, instruction_set: InstructionSet) {
+    fn execute(test: Test, instruction_set: InstructionSet) {
         println!("execute json test {}", test.name);
 
         let mut memory = Memory::new();
@@ -8908,357 +8896,357 @@ mod json_tests {
 
     /// Macro that allows for easily defining a test function that executes a JSON-based test file.
     macro_rules! test_instruction {
-        ($name:ident, $file:expr, $op:expr) => {
+        ($name:ident, $file:expr) => {
             #[test]
             #[ignore]
             #[allow(non_snake_case)]
             fn $name() {
-                test_json_file($file, $op, InstructionSet::Standard)
+                test_json_file($file, InstructionSet::Standard)
             }
         };
     }
 
     /// Macro that allows for easily defining a test function that executes a JSON-based test file.
     macro_rules! test_prefixed_instruction {
-        ($name:ident, $file:expr, $op:expr) => {
+        ($name:ident, $file:expr) => {
             #[test]
             #[ignore]
             #[allow(non_snake_case)]
             fn $name() {
-                test_json_file($file, $op, InstructionSet::Prefixed)
+                test_json_file($file, InstructionSet::Prefixed)
             }
         };
     }
 
     // 0x0x
-    test_instruction!(test_00, "00.json", 0x00);
-    test_instruction!(test_01, "01.json", 0x01);
-    test_instruction!(test_02, "02.json", 0x02);
-    test_instruction!(test_03, "03.json", 0x03);
-    test_instruction!(test_04, "04.json", 0x04);
-    test_instruction!(test_05, "05.json", 0x05);
-    test_instruction!(test_06, "06.json", 0x06);
-    test_instruction!(test_07, "07.json", 0x07);
-    test_instruction!(test_08, "08.json", 0x08);
-    test_instruction!(test_09, "09.json", 0x09);
-    test_instruction!(test_0A, "0a.json", 0x0A);
-    test_instruction!(test_0B, "0b.json", 0x0B);
-    test_instruction!(test_0C, "0c.json", 0x0C);
-    test_instruction!(test_0D, "0d.json", 0x0D);
-    test_instruction!(test_0E, "0e.json", 0x0E);
-    test_instruction!(test_0F, "0f.json", 0x0F);
+    test_instruction!(test_00, "00.json");
+    test_instruction!(test_01, "01.json");
+    test_instruction!(test_02, "02.json");
+    test_instruction!(test_03, "03.json");
+    test_instruction!(test_04, "04.json");
+    test_instruction!(test_05, "05.json");
+    test_instruction!(test_06, "06.json");
+    test_instruction!(test_07, "07.json");
+    test_instruction!(test_08, "08.json");
+    test_instruction!(test_09, "09.json");
+    test_instruction!(test_0A, "0a.json");
+    test_instruction!(test_0B, "0b.json");
+    test_instruction!(test_0C, "0c.json");
+    test_instruction!(test_0D, "0d.json");
+    test_instruction!(test_0E, "0e.json");
+    test_instruction!(test_0F, "0f.json");
 
     // 0x1x
-    test_instruction!(test_10, "10.json", 0x10);
-    test_instruction!(test_11, "11.json", 0x11);
-    test_instruction!(test_12, "12.json", 0x12);
-    test_instruction!(test_13, "13.json", 0x13);
-    test_instruction!(test_14, "14.json", 0x14);
-    test_instruction!(test_15, "15.json", 0x15);
-    test_instruction!(test_16, "16.json", 0x16);
-    test_instruction!(test_17, "17.json", 0x17);
-    test_instruction!(test_18, "18.json", 0x18);
-    test_instruction!(test_19, "19.json", 0x19);
-    test_instruction!(test_1A, "1a.json", 0x1A);
-    test_instruction!(test_1B, "1b.json", 0x1B);
-    test_instruction!(test_1C, "1c.json", 0x1C);
-    test_instruction!(test_1D, "1d.json", 0x1D);
-    test_instruction!(test_1E, "1e.json", 0x1E);
-    test_instruction!(test_1F, "1f.json", 0x1F);
+    test_instruction!(test_10, "10.json");
+    test_instruction!(test_11, "11.json");
+    test_instruction!(test_12, "12.json");
+    test_instruction!(test_13, "13.json");
+    test_instruction!(test_14, "14.json");
+    test_instruction!(test_15, "15.json");
+    test_instruction!(test_16, "16.json");
+    test_instruction!(test_17, "17.json");
+    test_instruction!(test_18, "18.json");
+    test_instruction!(test_19, "19.json");
+    test_instruction!(test_1A, "1a.json");
+    test_instruction!(test_1B, "1b.json");
+    test_instruction!(test_1C, "1c.json");
+    test_instruction!(test_1D, "1d.json");
+    test_instruction!(test_1E, "1e.json");
+    test_instruction!(test_1F, "1f.json");
 
     // 0x2x
-    test_instruction!(test_20, "20.json", 0x20);
-    test_instruction!(test_21, "21.json", 0x21);
-    test_instruction!(test_22, "22.json", 0x22);
-    test_instruction!(test_23, "23.json", 0x23);
-    test_instruction!(test_24, "24.json", 0x24);
-    test_instruction!(test_25, "25.json", 0x25);
-    test_instruction!(test_26, "26.json", 0x26);
-    test_instruction!(test_27, "27.json", 0x27);
-    test_instruction!(test_28, "28.json", 0x28);
-    test_instruction!(test_29, "29.json", 0x29);
-    test_instruction!(test_2A, "2a.json", 0x2A);
-    test_instruction!(test_2B, "2b.json", 0x2B);
-    test_instruction!(test_2C, "2c.json", 0x2C);
-    test_instruction!(test_2D, "2d.json", 0x2D);
-    test_instruction!(test_2E, "2e.json", 0x2E);
-    test_instruction!(test_2F, "2f.json", 0x2F);
+    test_instruction!(test_20, "20.json");
+    test_instruction!(test_21, "21.json");
+    test_instruction!(test_22, "22.json");
+    test_instruction!(test_23, "23.json");
+    test_instruction!(test_24, "24.json");
+    test_instruction!(test_25, "25.json");
+    test_instruction!(test_26, "26.json");
+    test_instruction!(test_27, "27.json");
+    test_instruction!(test_28, "28.json");
+    test_instruction!(test_29, "29.json");
+    test_instruction!(test_2A, "2a.json");
+    test_instruction!(test_2B, "2b.json");
+    test_instruction!(test_2C, "2c.json");
+    test_instruction!(test_2D, "2d.json");
+    test_instruction!(test_2E, "2e.json");
+    test_instruction!(test_2F, "2f.json");
 
     // 0x3x
-    test_instruction!(test_30, "30.json", 0x30);
-    test_instruction!(test_31, "31.json", 0x31);
-    test_instruction!(test_32, "32.json", 0x32);
-    test_instruction!(test_33, "33.json", 0x33);
-    test_instruction!(test_34, "34.json", 0x34);
-    test_instruction!(test_35, "35.json", 0x35);
-    test_instruction!(test_36, "36.json", 0x36);
-    test_instruction!(test_37, "37.json", 0x37);
-    test_instruction!(test_38, "38.json", 0x38);
-    test_instruction!(test_39, "39.json", 0x39);
-    test_instruction!(test_3A, "3a.json", 0x3A);
-    test_instruction!(test_3B, "3b.json", 0x3B);
-    test_instruction!(test_3C, "3c.json", 0x3C);
-    test_instruction!(test_3D, "3d.json", 0x3D);
-    test_instruction!(test_3E, "3e.json", 0x3E);
-    test_instruction!(test_3F, "3f.json", 0x3F);
+    test_instruction!(test_30, "30.json");
+    test_instruction!(test_31, "31.json");
+    test_instruction!(test_32, "32.json");
+    test_instruction!(test_33, "33.json");
+    test_instruction!(test_34, "34.json");
+    test_instruction!(test_35, "35.json");
+    test_instruction!(test_36, "36.json");
+    test_instruction!(test_37, "37.json");
+    test_instruction!(test_38, "38.json");
+    test_instruction!(test_39, "39.json");
+    test_instruction!(test_3A, "3a.json");
+    test_instruction!(test_3B, "3b.json");
+    test_instruction!(test_3C, "3c.json");
+    test_instruction!(test_3D, "3d.json");
+    test_instruction!(test_3E, "3e.json");
+    test_instruction!(test_3F, "3f.json");
 
     // 0x4x
-    test_instruction!(test_40, "40.json", 0x40);
-    test_instruction!(test_41, "41.json", 0x41);
-    test_instruction!(test_42, "42.json", 0x42);
-    test_instruction!(test_43, "43.json", 0x43);
-    test_instruction!(test_44, "44.json", 0x44);
-    test_instruction!(test_45, "45.json", 0x45);
-    test_instruction!(test_46, "46.json", 0x46);
-    test_instruction!(test_47, "47.json", 0x47);
-    test_instruction!(test_48, "48.json", 0x48);
-    test_instruction!(test_49, "49.json", 0x49);
-    test_instruction!(test_4A, "4a.json", 0x4A);
-    test_instruction!(test_4B, "4b.json", 0x4B);
-    test_instruction!(test_4C, "4c.json", 0x4C);
-    test_instruction!(test_4D, "4d.json", 0x4D);
-    test_instruction!(test_4E, "4e.json", 0x4E);
-    test_instruction!(test_4F, "4f.json", 0x4F);
+    test_instruction!(test_40, "40.json");
+    test_instruction!(test_41, "41.json");
+    test_instruction!(test_42, "42.json");
+    test_instruction!(test_43, "43.json");
+    test_instruction!(test_44, "44.json");
+    test_instruction!(test_45, "45.json");
+    test_instruction!(test_46, "46.json");
+    test_instruction!(test_47, "47.json");
+    test_instruction!(test_48, "48.json");
+    test_instruction!(test_49, "49.json");
+    test_instruction!(test_4A, "4a.json");
+    test_instruction!(test_4B, "4b.json");
+    test_instruction!(test_4C, "4c.json");
+    test_instruction!(test_4D, "4d.json");
+    test_instruction!(test_4E, "4e.json");
+    test_instruction!(test_4F, "4f.json");
 
     // 0x5x
-    test_instruction!(test_50, "50.json", 0x50);
-    test_instruction!(test_51, "51.json", 0x51);
-    test_instruction!(test_52, "52.json", 0x52);
-    test_instruction!(test_53, "53.json", 0x53);
-    test_instruction!(test_54, "54.json", 0x54);
-    test_instruction!(test_55, "55.json", 0x55);
-    test_instruction!(test_56, "56.json", 0x56);
-    test_instruction!(test_57, "57.json", 0x57);
-    test_instruction!(test_58, "58.json", 0x58);
-    test_instruction!(test_59, "59.json", 0x59);
-    test_instruction!(test_5A, "5a.json", 0x5A);
-    test_instruction!(test_5B, "5b.json", 0x5B);
-    test_instruction!(test_5C, "5c.json", 0x5C);
-    test_instruction!(test_5D, "5d.json", 0x5D);
-    test_instruction!(test_5E, "5e.json", 0x5E);
-    test_instruction!(test_5F, "5f.json", 0x5F);
+    test_instruction!(test_50, "50.json");
+    test_instruction!(test_51, "51.json");
+    test_instruction!(test_52, "52.json");
+    test_instruction!(test_53, "53.json");
+    test_instruction!(test_54, "54.json");
+    test_instruction!(test_55, "55.json");
+    test_instruction!(test_56, "56.json");
+    test_instruction!(test_57, "57.json");
+    test_instruction!(test_58, "58.json");
+    test_instruction!(test_59, "59.json");
+    test_instruction!(test_5A, "5a.json");
+    test_instruction!(test_5B, "5b.json");
+    test_instruction!(test_5C, "5c.json");
+    test_instruction!(test_5D, "5d.json");
+    test_instruction!(test_5E, "5e.json");
+    test_instruction!(test_5F, "5f.json");
 
     // 0x6x
-    test_instruction!(test_60, "60.json", 0x60);
-    test_instruction!(test_61, "61.json", 0x61);
-    test_instruction!(test_62, "62.json", 0x62);
-    test_instruction!(test_63, "63.json", 0x63);
-    test_instruction!(test_64, "64.json", 0x64);
-    test_instruction!(test_65, "65.json", 0x65);
-    test_instruction!(test_66, "66.json", 0x66);
-    test_instruction!(test_67, "67.json", 0x67);
-    test_instruction!(test_68, "68.json", 0x68);
-    test_instruction!(test_69, "69.json", 0x69);
-    test_instruction!(test_6A, "6a.json", 0x6A);
-    test_instruction!(test_6B, "6b.json", 0x6B);
-    test_instruction!(test_6C, "6c.json", 0x6C);
-    test_instruction!(test_6D, "6d.json", 0x6D);
-    test_instruction!(test_6E, "6e.json", 0x6E);
-    test_instruction!(test_6F, "6f.json", 0x6F);
+    test_instruction!(test_60, "60.json");
+    test_instruction!(test_61, "61.json");
+    test_instruction!(test_62, "62.json");
+    test_instruction!(test_63, "63.json");
+    test_instruction!(test_64, "64.json");
+    test_instruction!(test_65, "65.json");
+    test_instruction!(test_66, "66.json");
+    test_instruction!(test_67, "67.json");
+    test_instruction!(test_68, "68.json");
+    test_instruction!(test_69, "69.json");
+    test_instruction!(test_6A, "6a.json");
+    test_instruction!(test_6B, "6b.json");
+    test_instruction!(test_6C, "6c.json");
+    test_instruction!(test_6D, "6d.json");
+    test_instruction!(test_6E, "6e.json");
+    test_instruction!(test_6F, "6f.json");
 
     // 0x7x
-    test_instruction!(test_70, "70.json", 0x70);
-    test_instruction!(test_71, "71.json", 0x71);
-    test_instruction!(test_72, "72.json", 0x72);
-    test_instruction!(test_73, "73.json", 0x73);
-    test_instruction!(test_74, "74.json", 0x74);
-    test_instruction!(test_75, "75.json", 0x75);
-    test_instruction!(test_76, "76.json", 0x76);
-    test_instruction!(test_77, "77.json", 0x77);
-    test_instruction!(test_78, "78.json", 0x78);
-    test_instruction!(test_79, "79.json", 0x79);
-    test_instruction!(test_7A, "7a.json", 0x7A);
-    test_instruction!(test_7B, "7b.json", 0x7B);
-    test_instruction!(test_7C, "7c.json", 0x7C);
-    test_instruction!(test_7D, "7d.json", 0x7D);
-    test_instruction!(test_7E, "7e.json", 0x7E);
-    test_instruction!(test_7F, "7f.json", 0x7F);
+    test_instruction!(test_70, "70.json");
+    test_instruction!(test_71, "71.json");
+    test_instruction!(test_72, "72.json");
+    test_instruction!(test_73, "73.json");
+    test_instruction!(test_74, "74.json");
+    test_instruction!(test_75, "75.json");
+    test_instruction!(test_76, "76.json");
+    test_instruction!(test_77, "77.json");
+    test_instruction!(test_78, "78.json");
+    test_instruction!(test_79, "79.json");
+    test_instruction!(test_7A, "7a.json");
+    test_instruction!(test_7B, "7b.json");
+    test_instruction!(test_7C, "7c.json");
+    test_instruction!(test_7D, "7d.json");
+    test_instruction!(test_7E, "7e.json");
+    test_instruction!(test_7F, "7f.json");
 
     // 0x8x
-    test_instruction!(test_80, "80.json", 0x80);
-    test_instruction!(test_81, "81.json", 0x81);
-    test_instruction!(test_82, "82.json", 0x82);
-    test_instruction!(test_83, "83.json", 0x83);
-    test_instruction!(test_84, "84.json", 0x84);
-    test_instruction!(test_85, "85.json", 0x85);
-    test_instruction!(test_86, "86.json", 0x86);
-    test_instruction!(test_87, "87.json", 0x87);
-    test_instruction!(test_88, "88.json", 0x88);
-    test_instruction!(test_89, "89.json", 0x89);
-    test_instruction!(test_8A, "8a.json", 0x8A);
-    test_instruction!(test_8B, "8b.json", 0x8B);
-    test_instruction!(test_8C, "8c.json", 0x8C);
-    test_instruction!(test_8D, "8d.json", 0x8D);
-    test_instruction!(test_8E, "8e.json", 0x8E);
-    test_instruction!(test_8F, "8f.json", 0x8F);
+    test_instruction!(test_80, "80.json");
+    test_instruction!(test_81, "81.json");
+    test_instruction!(test_82, "82.json");
+    test_instruction!(test_83, "83.json");
+    test_instruction!(test_84, "84.json");
+    test_instruction!(test_85, "85.json");
+    test_instruction!(test_86, "86.json");
+    test_instruction!(test_87, "87.json");
+    test_instruction!(test_88, "88.json");
+    test_instruction!(test_89, "89.json");
+    test_instruction!(test_8A, "8a.json");
+    test_instruction!(test_8B, "8b.json");
+    test_instruction!(test_8C, "8c.json");
+    test_instruction!(test_8D, "8d.json");
+    test_instruction!(test_8E, "8e.json");
+    test_instruction!(test_8F, "8f.json");
 
     // 0x9x
-    test_instruction!(test_90, "90.json", 0x90);
-    test_instruction!(test_91, "91.json", 0x91);
-    test_instruction!(test_92, "92.json", 0x92);
-    test_instruction!(test_93, "93.json", 0x93);
-    test_instruction!(test_94, "94.json", 0x94);
-    test_instruction!(test_95, "95.json", 0x95);
-    test_instruction!(test_96, "96.json", 0x96);
-    test_instruction!(test_97, "97.json", 0x97);
-    test_instruction!(test_98, "98.json", 0x98);
-    test_instruction!(test_99, "99.json", 0x99);
-    test_instruction!(test_9A, "9a.json", 0x9A);
-    test_instruction!(test_9B, "9b.json", 0x9B);
-    test_instruction!(test_9C, "9c.json", 0x9C);
-    test_instruction!(test_9D, "9d.json", 0x9D);
-    test_instruction!(test_9E, "9e.json", 0x9E);
-    test_instruction!(test_9F, "9f.json", 0x9F);
+    test_instruction!(test_90, "90.json");
+    test_instruction!(test_91, "91.json");
+    test_instruction!(test_92, "92.json");
+    test_instruction!(test_93, "93.json");
+    test_instruction!(test_94, "94.json");
+    test_instruction!(test_95, "95.json");
+    test_instruction!(test_96, "96.json");
+    test_instruction!(test_97, "97.json");
+    test_instruction!(test_98, "98.json");
+    test_instruction!(test_99, "99.json");
+    test_instruction!(test_9A, "9a.json");
+    test_instruction!(test_9B, "9b.json");
+    test_instruction!(test_9C, "9c.json");
+    test_instruction!(test_9D, "9d.json");
+    test_instruction!(test_9E, "9e.json");
+    test_instruction!(test_9F, "9f.json");
 
     // 0xAx
-    test_instruction!(test_A0, "a0.json", 0xA0);
-    test_instruction!(test_A1, "a1.json", 0xA1);
-    test_instruction!(test_A2, "a2.json", 0xA2);
-    test_instruction!(test_A3, "a3.json", 0xA3);
-    test_instruction!(test_A4, "a4.json", 0xA4);
-    test_instruction!(test_A5, "a5.json", 0xA5);
-    test_instruction!(test_A6, "a6.json", 0xA6);
-    test_instruction!(test_A7, "a7.json", 0xA7);
-    test_instruction!(test_A8, "a8.json", 0xA8);
-    test_instruction!(test_A9, "a9.json", 0xA9);
-    test_instruction!(test_AA, "aa.json", 0xAA);
-    test_instruction!(test_AB, "ab.json", 0xAB);
-    test_instruction!(test_AC, "ac.json", 0xAC);
-    test_instruction!(test_AD, "ad.json", 0xAD);
-    test_instruction!(test_AE, "ae.json", 0xAE);
-    test_instruction!(test_AF, "af.json", 0xAF);
+    test_instruction!(test_A0, "a0.json");
+    test_instruction!(test_A1, "a1.json");
+    test_instruction!(test_A2, "a2.json");
+    test_instruction!(test_A3, "a3.json");
+    test_instruction!(test_A4, "a4.json");
+    test_instruction!(test_A5, "a5.json");
+    test_instruction!(test_A6, "a6.json");
+    test_instruction!(test_A7, "a7.json");
+    test_instruction!(test_A8, "a8.json");
+    test_instruction!(test_A9, "a9.json");
+    test_instruction!(test_AA, "aa.json");
+    test_instruction!(test_AB, "ab.json");
+    test_instruction!(test_AC, "ac.json");
+    test_instruction!(test_AD, "ad.json");
+    test_instruction!(test_AE, "ae.json");
+    test_instruction!(test_AF, "af.json");
 
     // 0xBx
-    test_instruction!(test_B0, "b0.json", 0xB0);
-    test_instruction!(test_B1, "b1.json", 0xB1);
-    test_instruction!(test_B2, "b2.json", 0xB2);
-    test_instruction!(test_B3, "b3.json", 0xB3);
-    test_instruction!(test_B4, "b4.json", 0xB4);
-    test_instruction!(test_B5, "b5.json", 0xB5);
-    test_instruction!(test_B6, "b6.json", 0xB6);
-    test_instruction!(test_B7, "b7.json", 0xB7);
-    test_instruction!(test_B8, "b8.json", 0xB8);
-    test_instruction!(test_B9, "b9.json", 0xB9);
-    test_instruction!(test_BA, "ba.json", 0xBA);
-    test_instruction!(test_BB, "bb.json", 0xBB);
-    test_instruction!(test_BC, "bc.json", 0xBC);
-    test_instruction!(test_BD, "bd.json", 0xBD);
-    test_instruction!(test_BE, "be.json", 0xBE);
-    test_instruction!(test_BF, "bf.json", 0xBF);
+    test_instruction!(test_B0, "b0.json");
+    test_instruction!(test_B1, "b1.json");
+    test_instruction!(test_B2, "b2.json");
+    test_instruction!(test_B3, "b3.json");
+    test_instruction!(test_B4, "b4.json");
+    test_instruction!(test_B5, "b5.json");
+    test_instruction!(test_B6, "b6.json");
+    test_instruction!(test_B7, "b7.json");
+    test_instruction!(test_B8, "b8.json");
+    test_instruction!(test_B9, "b9.json");
+    test_instruction!(test_BA, "ba.json");
+    test_instruction!(test_BB, "bb.json");
+    test_instruction!(test_BC, "bc.json");
+    test_instruction!(test_BD, "bd.json");
+    test_instruction!(test_BE, "be.json");
+    test_instruction!(test_BF, "bf.json");
 
     // 0xCx
-    test_instruction!(test_C0, "c0.json", 0xC0);
-    test_instruction!(test_C1, "c1.json", 0xC1);
-    test_instruction!(test_C2, "c2.json", 0xC2);
-    test_instruction!(test_C3, "c3.json", 0xC3);
-    test_instruction!(test_C4, "c4.json", 0xC4);
-    test_instruction!(test_C5, "c5.json", 0xC5);
-    test_instruction!(test_C6, "c6.json", 0xC6);
-    test_instruction!(test_C7, "c7.json", 0xC7);
-    test_instruction!(test_C8, "c8.json", 0xC8);
-    test_instruction!(test_C9, "c9.json", 0xC9);
-    test_instruction!(test_CA, "ca.json", 0xCA);
-    test_instruction!(test_CC, "cc.json", 0xCC);
-    test_instruction!(test_CD, "cd.json", 0xCD);
-    test_instruction!(test_CE, "ce.json", 0xCE);
-    test_instruction!(test_CF, "cf.json", 0xCF);
+    test_instruction!(test_C0, "c0.json");
+    test_instruction!(test_C1, "c1.json");
+    test_instruction!(test_C2, "c2.json");
+    test_instruction!(test_C3, "c3.json");
+    test_instruction!(test_C4, "c4.json");
+    test_instruction!(test_C5, "c5.json");
+    test_instruction!(test_C6, "c6.json");
+    test_instruction!(test_C7, "c7.json");
+    test_instruction!(test_C8, "c8.json");
+    test_instruction!(test_C9, "c9.json");
+    test_instruction!(test_CA, "ca.json");
+    test_instruction!(test_CC, "cc.json");
+    test_instruction!(test_CD, "cd.json");
+    test_instruction!(test_CE, "ce.json");
+    test_instruction!(test_CF, "cf.json");
 
     // 0xDx
-    test_instruction!(test_D0, "d0.json", 0xD0);
-    test_instruction!(test_D1, "d1.json", 0xD1);
-    test_instruction!(test_D2, "d2.json", 0xD2);
-    test_instruction!(test_D4, "d4.json", 0xD4);
-    test_instruction!(test_D5, "d5.json", 0xD5);
-    test_instruction!(test_D6, "d6.json", 0xD6);
-    test_instruction!(test_D7, "d7.json", 0xD7);
-    test_instruction!(test_D8, "d8.json", 0xD8);
-    test_instruction!(test_D9, "d9.json", 0xD9);
-    test_instruction!(test_DA, "da.json", 0xDA);
-    test_instruction!(test_DC, "dc.json", 0xDC);
-    test_instruction!(test_DE, "de.json", 0xDE);
-    test_instruction!(test_DF, "df.json", 0xDF);
+    test_instruction!(test_D0, "d0.json");
+    test_instruction!(test_D1, "d1.json");
+    test_instruction!(test_D2, "d2.json");
+    test_instruction!(test_D4, "d4.json");
+    test_instruction!(test_D5, "d5.json");
+    test_instruction!(test_D6, "d6.json");
+    test_instruction!(test_D7, "d7.json");
+    test_instruction!(test_D8, "d8.json");
+    test_instruction!(test_D9, "d9.json");
+    test_instruction!(test_DA, "da.json");
+    test_instruction!(test_DC, "dc.json");
+    test_instruction!(test_DE, "de.json");
+    test_instruction!(test_DF, "df.json");
 
     // 0xEx
-    test_instruction!(test_E0, "e0.json", 0xE0);
-    test_instruction!(test_E1, "e1.json", 0xE1);
+    test_instruction!(test_E0, "e0.json");
+    test_instruction!(test_E1, "e1.json");
     //TODO: re-enable after handling the memory mapping for the address range correctly
-    //test_instruction!(test_E2, "e2.json", 0xE2);
-    test_instruction!(test_E5, "e5.json", 0xE5);
-    test_instruction!(test_E6, "e6.json", 0xE6);
-    test_instruction!(test_E7, "e7.json", 0xE7);
-    test_instruction!(test_E8, "e8.json", 0xE8);
-    test_instruction!(test_E9, "e9.json", 0xE9);
-    test_instruction!(test_EA, "ea.json", 0xEA);
-    test_instruction!(test_EE, "ee.json", 0xEE);
-    test_instruction!(test_EF, "ef.json", 0xEF);
+    //test_instruction!(test_E2, "e2.json");
+    test_instruction!(test_E5, "e5.json");
+    test_instruction!(test_E6, "e6.json");
+    test_instruction!(test_E7, "e7.json");
+    test_instruction!(test_E8, "e8.json");
+    test_instruction!(test_E9, "e9.json");
+    test_instruction!(test_EA, "ea.json");
+    test_instruction!(test_EE, "ee.json");
+    test_instruction!(test_EF, "ef.json");
 
     // 0xFx
-    test_instruction!(test_F0, "f0.json", 0xF0);
-    test_instruction!(test_F1, "f1.json", 0xF1);
+    test_instruction!(test_F0, "f0.json");
+    test_instruction!(test_F1, "f1.json");
     //TODO: re-enable after handling the memory mapping for the address range correctly
-    //test_instruction!(test_F2, "f2.json", 0xF2);
-    test_instruction!(test_F3, "f3.json", 0xF3);
-    test_instruction!(test_F5, "f5.json", 0xF5);
-    test_instruction!(test_F6, "f6.json", 0xF6);
-    test_instruction!(test_F7, "f7.json", 0xF7);
-    test_instruction!(test_F8, "f8.json", 0xF8);
-    test_instruction!(test_F9, "f9.json", 0xF9);
-    test_instruction!(test_FA, "fa.json", 0xFA);
-    test_instruction!(test_FB, "fb.json", 0xFB);
-    test_instruction!(test_FE, "fe.json", 0xFE);
-    test_instruction!(test_FF, "ff.json", 0xFF);
+    //test_instruction!(test_F2, "f2.json");
+    test_instruction!(test_F3, "f3.json");
+    test_instruction!(test_F5, "f5.json");
+    test_instruction!(test_F6, "f6.json");
+    test_instruction!(test_F7, "f7.json");
+    test_instruction!(test_F8, "f8.json");
+    test_instruction!(test_F9, "f9.json");
+    test_instruction!(test_FA, "fa.json");
+    test_instruction!(test_FB, "fb.json");
+    test_instruction!(test_FE, "fe.json");
+    test_instruction!(test_FF, "ff.json");
 
     // 0xCB0x
-    test_prefixed_instruction!(test_CB00, "cb 00.json", 0x00);
-    test_prefixed_instruction!(test_CB01, "cb 01.json", 0x01);
-    test_prefixed_instruction!(test_CB02, "cb 02.json", 0x02);
-    test_prefixed_instruction!(test_CB03, "cb 03.json", 0x03);
-    test_prefixed_instruction!(test_CB04, "cb 04.json", 0x04);
-    test_prefixed_instruction!(test_CB05, "cb 05.json", 0x05);
-    test_prefixed_instruction!(test_CB06, "cb 06.json", 0x06);
-    test_prefixed_instruction!(test_CB07, "cb 07.json", 0x07);
-    test_prefixed_instruction!(test_CB08, "cb 08.json", 0x08);
-    test_prefixed_instruction!(test_CB09, "cb 09.json", 0x09);
-    test_prefixed_instruction!(test_CB0A, "cb 0A.json", 0x0A);
-    test_prefixed_instruction!(test_CB0B, "cb 0B.json", 0x0B);
-    test_prefixed_instruction!(test_CB0C, "cb 0C.json", 0x0C);
-    test_prefixed_instruction!(test_CB0D, "cb 0D.json", 0x0D);
-    test_prefixed_instruction!(test_CB0E, "cb 0E.json", 0x0E);
-    test_prefixed_instruction!(test_CB0F, "cb 0F.json", 0x0F);
+    test_prefixed_instruction!(test_CB00, "cb 00.json");
+    test_prefixed_instruction!(test_CB01, "cb 01.json");
+    test_prefixed_instruction!(test_CB02, "cb 02.json");
+    test_prefixed_instruction!(test_CB03, "cb 03.json");
+    test_prefixed_instruction!(test_CB04, "cb 04.json");
+    test_prefixed_instruction!(test_CB05, "cb 05.json");
+    test_prefixed_instruction!(test_CB06, "cb 06.json");
+    test_prefixed_instruction!(test_CB07, "cb 07.json");
+    test_prefixed_instruction!(test_CB08, "cb 08.json");
+    test_prefixed_instruction!(test_CB09, "cb 09.json");
+    test_prefixed_instruction!(test_CB0A, "cb 0A.json");
+    test_prefixed_instruction!(test_CB0B, "cb 0B.json");
+    test_prefixed_instruction!(test_CB0C, "cb 0C.json");
+    test_prefixed_instruction!(test_CB0D, "cb 0D.json");
+    test_prefixed_instruction!(test_CB0E, "cb 0E.json");
+    test_prefixed_instruction!(test_CB0F, "cb 0F.json");
 
     // 0xCB1x
-    test_prefixed_instruction!(test_CB10, "cb 10.json", 0x10);
-    test_prefixed_instruction!(test_CB11, "cb 11.json", 0x11);
-    test_prefixed_instruction!(test_CB12, "cb 12.json", 0x12);
-    test_prefixed_instruction!(test_CB13, "cb 13.json", 0x13);
-    test_prefixed_instruction!(test_CB14, "cb 14.json", 0x14);
-    test_prefixed_instruction!(test_CB15, "cb 15.json", 0x15);
-    test_prefixed_instruction!(test_CB16, "cb 16.json", 0x16);
-    test_prefixed_instruction!(test_CB17, "cb 17.json", 0x17);
-    test_prefixed_instruction!(test_CB18, "cb 18.json", 0x18);
-    test_prefixed_instruction!(test_CB19, "cb 19.json", 0x19);
-    test_prefixed_instruction!(test_CB1A, "cb 1A.json", 0x1A);
-    test_prefixed_instruction!(test_CB1B, "cb 1B.json", 0x1B);
-    test_prefixed_instruction!(test_CB1C, "cb 1C.json", 0x1C);
-    test_prefixed_instruction!(test_CB1D, "cb 1D.json", 0x1D);
-    test_prefixed_instruction!(test_CB1E, "cb 1E.json", 0x1E);
-    test_prefixed_instruction!(test_CB1F, "cb 1F.json", 0x1F);
+    test_prefixed_instruction!(test_CB10, "cb 10.json");
+    test_prefixed_instruction!(test_CB11, "cb 11.json");
+    test_prefixed_instruction!(test_CB12, "cb 12.json");
+    test_prefixed_instruction!(test_CB13, "cb 13.json");
+    test_prefixed_instruction!(test_CB14, "cb 14.json");
+    test_prefixed_instruction!(test_CB15, "cb 15.json");
+    test_prefixed_instruction!(test_CB16, "cb 16.json");
+    test_prefixed_instruction!(test_CB17, "cb 17.json");
+    test_prefixed_instruction!(test_CB18, "cb 18.json");
+    test_prefixed_instruction!(test_CB19, "cb 19.json");
+    test_prefixed_instruction!(test_CB1A, "cb 1A.json");
+    test_prefixed_instruction!(test_CB1B, "cb 1B.json");
+    test_prefixed_instruction!(test_CB1C, "cb 1C.json");
+    test_prefixed_instruction!(test_CB1D, "cb 1D.json");
+    test_prefixed_instruction!(test_CB1E, "cb 1E.json");
+    test_prefixed_instruction!(test_CB1F, "cb 1F.json");
 
     // 0xCB2x
-    test_prefixed_instruction!(test_CB20, "cb 20.json", 0x20);
-    test_prefixed_instruction!(test_CB21, "cb 21.json", 0x21);
-    test_prefixed_instruction!(test_CB22, "cb 22.json", 0x22);
-    test_prefixed_instruction!(test_CB23, "cb 23.json", 0x23);
-    test_prefixed_instruction!(test_CB24, "cb 24.json", 0x24);
-    test_prefixed_instruction!(test_CB25, "cb 25.json", 0x25);
-    test_prefixed_instruction!(test_CB26, "cb 26.json", 0x26);
-    test_prefixed_instruction!(test_CB27, "cb 27.json", 0x27);
-    test_prefixed_instruction!(test_CB28, "cb 28.json", 0x28);
-    test_prefixed_instruction!(test_CB29, "cb 29.json", 0x29);
-    test_prefixed_instruction!(test_CB2A, "cb 2A.json", 0x2A);
-    test_prefixed_instruction!(test_CB2B, "cb 2B.json", 0x2B);
-    test_prefixed_instruction!(test_CB2C, "cb 2C.json", 0x2C);
-    test_prefixed_instruction!(test_CB2D, "cb 2D.json", 0x2D);
-    test_prefixed_instruction!(test_CB2E, "cb 2E.json", 0x2E);
-    test_prefixed_instruction!(test_CB2F, "cb 2F.json", 0x2F);
+    test_prefixed_instruction!(test_CB20, "cb 20.json");
+    test_prefixed_instruction!(test_CB21, "cb 21.json");
+    test_prefixed_instruction!(test_CB22, "cb 22.json");
+    test_prefixed_instruction!(test_CB23, "cb 23.json");
+    test_prefixed_instruction!(test_CB24, "cb 24.json");
+    test_prefixed_instruction!(test_CB25, "cb 25.json");
+    test_prefixed_instruction!(test_CB26, "cb 26.json");
+    test_prefixed_instruction!(test_CB27, "cb 27.json");
+    test_prefixed_instruction!(test_CB28, "cb 28.json");
+    test_prefixed_instruction!(test_CB29, "cb 29.json");
+    test_prefixed_instruction!(test_CB2A, "cb 2A.json");
+    test_prefixed_instruction!(test_CB2B, "cb 2B.json");
+    test_prefixed_instruction!(test_CB2C, "cb 2C.json");
+    test_prefixed_instruction!(test_CB2D, "cb 2D.json");
+    test_prefixed_instruction!(test_CB2E, "cb 2E.json");
+    test_prefixed_instruction!(test_CB2F, "cb 2F.json");
 }

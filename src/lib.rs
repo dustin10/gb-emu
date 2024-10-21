@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use crate::{cpu::Cpu, mem::Memory};
 
 use anyhow::Context;
