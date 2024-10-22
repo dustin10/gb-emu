@@ -1,48 +1,8 @@
-use crate::{cpu::Cpu, mem::Memory};
+use crate::{cartridge::Cartridge, cpu::Cpu, mem::Memory};
 
-use anyhow::Context;
-use std::path::Path;
-
+pub mod cartridge;
 pub mod cpu;
 pub mod mem;
-
-/// Address in emulator memory where the cartridge data is loaded.
-const CARTRIDGE_START_ADDRESS: u16 = 0x0000;
-
-/// The [`Cartridge`] struct represents a game cartridge which is loaded into the Game Boy.
-#[derive(Debug, Default)]
-pub struct Cartridge {
-    /// Name of the game catridge.
-    pub name: String,
-    /// Raw data contained in the cartridge.
-    data: Vec<u8>,
-}
-
-impl Cartridge {
-    /// Creates a new [`Cartridge`] with the given values.
-    pub fn new(name: String, data: Vec<u8>) -> Self {
-        Self { name, data }
-    }
-    /// Creates a new [`Cartridge`] by loading a ROM file from the given file path on disk.
-    pub fn from_rom(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        tracing::debug!("load cartridge from rom file: {:?}", path.as_ref());
-
-        let name = path
-            .as_ref()
-            .file_name()
-            .and_then(|s| s.to_str().map(String::from))
-            .unwrap_or_else(|| String::from("Unknown"));
-
-        let data = std::fs::read(path.as_ref())
-            .context(format!("read file: {}", path.as_ref().to_string_lossy()))?;
-
-        Ok(Self::new(name, data))
-    }
-    /// Loads the cartridge data into emulator memory.
-    pub fn load(&self, memory: &mut Memory) {
-        memory.write_block(CARTRIDGE_START_ADDRESS, &self.data);
-    }
-}
 
 /// The [`Emulator`] struct is the container that is responsible for managing all of the subsystems
 /// required to emulate the Game Boy and play a game cartridge.
@@ -68,12 +28,17 @@ impl Emulator {
     }
     /// Runs the emulator. Currently, must be called after [`Emulator::load_cartridge`].
     pub fn run(&mut self) -> anyhow::Result<()> {
-        if self.cartridge.is_none() {
-            anyhow::bail!("no Cartridge loaded");
-        }
+        match &self.cartridge {
+            None => anyhow::bail!("no Cartridge loaded"),
+            Some(cartridge) => {
+                if !cartridge.header.is_valid() {
+                    anyhow::bail!("Cartridge header checksum mismatch");
+                }
 
-        loop {
-            self.cpu.step(&mut self.memory);
+                loop {
+                    self.cpu.step(&mut self.memory);
+                }
+            }
         }
     }
 }

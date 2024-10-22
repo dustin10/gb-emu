@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::Parser;
-use gb_emu::{Cartridge, Emulator};
+use gb_emu::{cartridge::Cartridge, Emulator};
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::EnvFilter;
 

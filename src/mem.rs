@@ -1,6 +1,43 @@
 /// Defines the maximum size of the addressable memory for the emulator.
 const ADDRESSABLE_MEMORY: usize = 65536;
 
+/// Enumerates the supported memory bank controller (MBC) implementations.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum MBC {
+    /// No mapping required.
+    NoMapping,
+    /// MBC1
+    One { ram: bool, battery: bool },
+}
+
+impl From<u8> for MBC {
+    /// Creates the appropraite [`MBC`] that maps to the given [`u8`] which represents the memory
+    /// bank controller that a [`crate::cartridge::Cartridge`] requires. This value is read from
+    /// the cartridge header.
+    ///
+    /// # Panic
+    ///
+    /// This function will panic when the MBC which the byte maps to has not yet been implemented.
+    fn from(value: u8) -> Self {
+        match value {
+            0x00 => MBC::NoMapping,
+            0x01 => MBC::One {
+                ram: true,
+                battery: true,
+            },
+            0x02 => MBC::One {
+                ram: true,
+                battery: false,
+            },
+            0x03 => MBC::One {
+                ram: true,
+                battery: true,
+            },
+            _ => panic!("unsupported MBC type: {:#2x}", value),
+        }
+    }
+}
+
 /// [`Memory`] represents the emulator memory bus
 #[derive(Debug)]
 pub struct Memory {
