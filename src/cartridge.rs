@@ -4,11 +4,68 @@ use anyhow::Context;
 use std::path::Path;
 
 /// Address in emulator memory where the cartridge data is loaded.
-const CARTRIDGE_START_ADDRESS: u16 = 0x0000;
+const CARTRIDGE_START_ADDR: u16 = 0x0000;
 
 /// Value set for the old licensee in the header when the new licensee value should be read
 /// instead.
 const OLD_LICENSEE_REDIRECT_VALUE: u8 = 0x33;
+
+/// Address of the first byte of the title.
+const TITLE_START_ADDR: usize = 0x0134;
+
+/// Address of the last byte of the title.
+const TITLE_END_ADDR: usize = 0x0143;
+
+/// Address of the first byte of the manufacturer code.
+const MANUFACTURER_START_ADDR: usize = 0x013F;
+
+/// Address of the last byte of the manufacturer code.
+const MANUFACTURER_END_ADDR: usize = 0x0142;
+
+/// Address of the CGB flag.
+const CGB_FLAG_ADDR: usize = 0x0143;
+
+/// Address of the low byte of the new licensee code.
+const NEW_LICENSEE_CODE_LOW_ADDR: usize = 0x0145;
+
+/// Address of the high byte of the new licensee code.
+const NEW_LICENSEE_CODE_HIGH_ADDR: usize = 0x0144;
+
+/// Address of the SGB flag.
+const SGB_FLAG_ADDR: usize = 0x0146;
+
+/// Address of the cartridge type byte.
+const TYPE_ADDR: usize = 0x0147;
+
+/// Address of the ROM size byte.
+const ROM_SIZE_ADDR: usize = 0x0148;
+
+/// Address of the RAM size byte.
+const RAM_SIZE_ADDR: usize = 0x0149;
+
+/// Address of the destination byte.
+const DESTINATION_ADDR: usize = 0x014A;
+
+/// Address of the old licensee code.
+const OLD_LICENSEE_CODE_ADDR: usize = 0x014B;
+
+/// Address of the cartridge version.
+const VERSION_ADDR: usize = 0x014C;
+
+/// Address of the expected header checksum value.
+const HEADER_CHECKSUM_ADDR: usize = 0x014D;
+
+/// Address of the low byte of the expected global checksum value.
+const GLOBAL_CHECKSUM_LOW_ADDR: usize = 0x014F;
+
+/// Address of the high byte of the expected global checksum value.
+const GLOBAL_CHECKSUM_HIGH_ADDR: usize = 0x014E;
+
+/// Address of the byte to start at when computing the header checksum.
+const COMPUTE_HEADER_CHECKSUM_START: usize = 0x0134;
+
+/// One past the address of the byte to end at when computing the header checksum.
+const COMPUTE_HEADER_CHECKSUM_END: usize = 0x014D;
 
 /// Holds the data that makes up the header of the [`Cartridge`]. The header contains data such as
 /// what [`MBC`] type to use, the title of the game, who made it, etc.
@@ -60,26 +117,32 @@ impl Header {
     /// Creates a new [`Header`] by parsing the relevant bytes from of the [`Cartridge`] data.
     fn new(data: &[u8]) -> Self {
         let mut title_bytes = [0; 16];
-        title_bytes[0..16].copy_from_slice(&data[0x0134..=0x0143]);
+        title_bytes[0..16].copy_from_slice(&data[TITLE_START_ADDR..=TITLE_END_ADDR]);
 
         let title = String::from_utf8_lossy(&title_bytes).to_string();
 
         let mut manufacturer_code_bytes = [0; 4];
-        manufacturer_code_bytes[0..4].copy_from_slice(&data[0x013F..=0x0142]);
+        manufacturer_code_bytes[0..4]
+            .copy_from_slice(&data[MANUFACTURER_START_ADDR..=MANUFACTURER_END_ADDR]);
 
         let manufacturer_code = String::from_utf8_lossy(&manufacturer_code_bytes).to_string();
 
-        let new_licensee_code: u16 = (data[0x0144] as u16) | ((data[0x0145] as u16) >> 8);
+        let new_licensee_code: u16 = (data[NEW_LICENSEE_CODE_HIGH_ADDR] as u16)
+            | ((data[NEW_LICENSEE_CODE_LOW_ADDR] as u16) >> 8);
 
-        let mbc = data[0x0147].into();
+        let mbc = data[TYPE_ADDR].into();
 
         let ram_size = match mbc {
             MBC::One { ram, .. } if ram => 0,
-            _ => data[0x0149],
+            _ => data[RAM_SIZE_ADDR],
         };
 
         let mut computed_header_checksum: u8 = 0;
-        for value in data.iter().take(0x014D).skip(0x0134) {
+        for value in data
+            .iter()
+            .take(COMPUTE_HEADER_CHECKSUM_END)
+            .skip(COMPUTE_HEADER_CHECKSUM_START)
+        {
             computed_header_checksum = computed_header_checksum
                 .wrapping_sub(*value)
                 .wrapping_sub(1);
@@ -87,28 +150,29 @@ impl Header {
 
         let mut computed_global_checksum: u16 = 0;
         for (address, value) in data.iter().enumerate() {
-            if address == 0x014E || address == 0x014F {
+            if address == GLOBAL_CHECKSUM_LOW_ADDR || address == GLOBAL_CHECKSUM_HIGH_ADDR {
                 continue;
             }
 
             computed_global_checksum = computed_global_checksum.wrapping_add(*value as u16);
         }
 
-        let expected_global_checksum: u16 = (data[0x014F] as u16) | ((data[0x014E] as u16) << 8);
+        let expected_global_checksum: u16 = (data[GLOBAL_CHECKSUM_LOW_ADDR] as u16)
+            | ((data[GLOBAL_CHECKSUM_HIGH_ADDR] as u16) << 8);
 
         Self {
             title,
             manufacturer_code,
-            cgb_flag: data[0x0143],
+            cgb_flag: data[CGB_FLAG_ADDR],
             new_licensee_code,
-            sgb_flag: data[0x0146],
+            sgb_flag: data[SGB_FLAG_ADDR],
             mbc,
-            rom_size: data[0x0148],
+            rom_size: data[ROM_SIZE_ADDR],
             ram_size,
-            destination: data[0x014A],
-            old_licensee_code: data[0x014B],
-            version: data[0x014C],
-            expected_header_checksum: data[0x014D],
+            destination: data[DESTINATION_ADDR],
+            old_licensee_code: data[OLD_LICENSEE_CODE_ADDR],
+            version: data[VERSION_ADDR],
+            expected_header_checksum: data[HEADER_CHECKSUM_ADDR],
             computed_header_checksum,
             expected_global_checksum,
             computed_global_checksum,
@@ -151,7 +215,7 @@ impl Cartridge {
     /// Creates a new [`Cartridge`] with the given values.
     pub fn new(name: String, data: Vec<u8>) -> Self {
         let header = Header::new(&data);
-        println!("{:?}", header);
+
         Self { name, data, header }
     }
     /// Creates a new [`Cartridge`] by loading a ROM file from the given file path on disk.
@@ -171,6 +235,6 @@ impl Cartridge {
     }
     /// Loads the cartridge data into emulator memory.
     pub fn load(&self, memory: &mut Memory) {
-        memory.write_block(CARTRIDGE_START_ADDRESS, &self.data);
+        memory.write_block(CARTRIDGE_START_ADDR, &self.data);
     }
 }
