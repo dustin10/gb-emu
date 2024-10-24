@@ -234,7 +234,10 @@ impl Cartridge {
         Ok(Self::new(name, data))
     }
     /// Loads the cartridge data into emulator memory.
-    pub fn load(&self, memory: &mut Memory) {
+    pub fn load<M>(&self, memory: &mut M)
+    where
+        M: Memory,
+    {
         memory.write_block(CARTRIDGE_START_ADDR, &self.data);
     }
 }

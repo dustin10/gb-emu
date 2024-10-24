@@ -1344,7 +1344,7 @@ impl Cpu {
         }
     }
     /// Reads and executes the next instruction based on the current program counter.
-    pub fn step(&mut self, memory: &mut Memory) {
+    pub fn step(&mut self, memory: &mut dyn Memory) {
         let op_code = memory.read_u8(self.registers.pc);
 
         let instruction = match self.instruction_set {
@@ -1369,7 +1369,7 @@ impl Cpu {
         };
     }
     /// Transforms the given op code into an [`Instruction`] which can be executed by the [`Cpu`].
-    fn decode(&self, op_code: u8, memory: &Memory) -> Option<Instruction> {
+    fn decode(&self, op_code: u8, memory: &dyn Memory) -> Option<Instruction> {
         tracing::debug!("decode op code {:#4x}", op_code);
 
         match op_code {
@@ -2071,7 +2071,7 @@ impl Cpu {
     }
     /// Executes the given [`Instruction`] returning the new program counter value and whether or
     /// not the op code for the next instruction is prefixed.
-    fn execute(&mut self, instruction: &Instruction, memory: &mut Memory) {
+    fn execute(&mut self, instruction: &Instruction, memory: &mut dyn Memory) {
         tracing::debug!("execute instruction '{}'", instruction);
 
         match instruction.operation {
@@ -3493,6 +3493,8 @@ mod tests {
 mod json_tests {
     use super::*;
 
+    use crate::mem::RomOnly;
+
     use serde::Deserialize;
     use std::path::Path;
 
@@ -3554,7 +3556,7 @@ mod json_tests {
     fn execute(test: Test, instruction_set: InstructionSet) {
         println!("execute json test {}", test.name);
 
-        let mut memory = Memory::new();
+        let mut memory = RomOnly::new();
 
         let mut cpu = Cpu::new();
         cpu.instruction_set = instruction_set;

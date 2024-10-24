@@ -1,6 +1,11 @@
 use anyhow::Context;
 use clap::Parser;
-use gb_emu::{cartridge::Cartridge, Emulator};
+use gb_emu::{
+    cartridge::Cartridge,
+    cpu::Cpu,
+    mem::{RomOnly, MBC},
+    Emulator,
+};
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
@@ -36,9 +41,14 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
+    let cpu = Cpu::new();
+
     let cartridge = Cartridge::from_rom(args.rom).context("create Cartridge from ROM file")?;
 
-    let mut emu = Emulator::new();
-    emu.load_cartridge(cartridge);
-    emu.run()
+    let memory = match cartridge.header.mbc {
+        MBC::NoMapping => RomOnly::new(),
+        _ => panic!("unsupported MBC type: {}", cartridge.header.mbc),
+    };
+
+    Emulator::new(cpu, memory, cartridge).run()
 }
