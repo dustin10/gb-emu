@@ -1365,7 +1365,7 @@ impl Cpu {
 
             self.history.push_front(instruction);
         } else {
-            tracing::warn!("unknown instruction: {:#4x}", op_code);
+            tracing::warn!("skipping unknown instruction: {:#4x}", op_code);
         };
     }
     /// Transforms the given op code into an [`Instruction`] which can be executed by the [`Cpu`].

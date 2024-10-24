@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 /// Defines the maximum size of the addressable memory for the emulator.
 const ADDRESSABLE_MEMORY: usize = 65536;
 
@@ -34,6 +36,17 @@ impl From<u8> for MBC {
                 battery: true,
             },
             _ => panic!("unsupported MBC type: {:#2x}", value),
+        }
+    }
+}
+
+impl Display for MBC {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MBC::NoMapping => f.write_str("ROM Only"),
+            MBC::One { ram, battery } => {
+                f.write_fmt(format_args!("MBC1 RAM:{} Battery:{}", ram, battery))
+            }
         }
     }
 }
