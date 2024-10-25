@@ -116,6 +116,7 @@ impl From<u8> for CartridgeType {
 }
 
 impl Display for CartridgeType {
+    /// Writes a string representation of the [`CartridgeType`] to the formatter.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CartridgeType::RomOnly => f.write_str("ROM Only"),
@@ -146,6 +147,7 @@ impl MBC for RomOnly {
     fn read(&self, address: u16) -> u8 {
         self.data[address as usize]
     }
+    /// Writes a single byte to memory at the given address.
     fn write(&mut self, address: u16, byte: u8) {
         self.data[address as usize] = byte;
     }
@@ -169,7 +171,7 @@ impl Default for RomOnly {
 }
 
 /// Holds the data that makes up the header of the [`Cartridge`]. The header contains data such as
-/// what [`MBC`] type to use, the title of the game, who made it, etc.
+/// the [`CartridgeType`], the title of the game, the company that made it, etc.
 #[derive(Debug)]
 pub struct Header {
     /// Title of the game in uppercase ASCII.
@@ -326,10 +328,13 @@ impl Cartridge {
             .context(format!("read file: {}", path.as_ref().to_string_lossy()))?;
 
         let header = Header::parse(&data);
+        if !header.is_valid() {
+            anyhow::bail!("cartridge header checksum mismatch");
+        }
 
         let mbc = Rc::new(RefCell::new(match header.cartridge_type {
             CartridgeType::RomOnly => RomOnly::new(),
-            _ => panic!("unsupported cartridge type: {}", header.cartridge_type),
+            _ => anyhow::bail!("unsupported cartridge type: {}", header.cartridge_type),
         }));
 
         mbc.borrow_mut().write_block(CARTRIDGE_START_ADDR, &data);

@@ -42,12 +42,12 @@ impl MMU {
 
 #[cfg(test)]
 mod tests {
-    use crate::cart::RomOnly;
-
     use super::*;
 
+    use crate::cart::RomOnly;
+
     #[test]
-    fn test_rom_only_read_u8() {
+    fn test_mmu_rom_only_read_u8() {
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
 
         let mut mmu = MMU::new(mbc);
@@ -58,7 +58,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rom_only_read_u16() {
+    fn test_mmu_rom_only_read_u16() {
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
 
         let mut mmu = MMU::new(mbc);
@@ -70,7 +70,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rom_only_read_i8() {
+    fn test_mmu_rom_only_read_i8() {
         {
             let mbc = Rc::new(RefCell::new(RomOnly::new()));
 
@@ -92,7 +92,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rom_only_write_byte() {
+    fn test_mmu_rom_only_write_byte() {
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
 
         let mut mmu = MMU::new(mbc);
@@ -102,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rom_only_write_block() {
+    fn test_mmu_rom_only_write_block() {
         let block = [200, 201, 202];
 
         let mbc = Rc::new(RefCell::new(RomOnly::new()));

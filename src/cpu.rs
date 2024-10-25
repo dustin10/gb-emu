@@ -1,7 +1,7 @@
+use crate::mem::MMU;
+
 use bounded_vec_deque::BoundedVecDeque;
 use std::fmt::Display;
-
-use crate::mem::MMU;
 
 /// Represents the registers on the cpu. Allows for easy manipulation of combined 16-bit registers as well.
 #[derive(Clone, Debug, Default)]
@@ -97,39 +97,39 @@ pub struct Flags(u8);
 
 impl Flags {
     /// Retrieves the current status of the carry flag.
-    fn c(&self) -> bool {
+    pub fn c(&self) -> bool {
         (self.0 >> FLAGS_CARRY_BIT_POSITION) & 1 != 0
     }
     /// Sets the status of the carry flag.
-    fn set_c(&mut self, on: bool) {
+    pub fn set_c(&mut self, on: bool) {
         self.set_flag(FLAGS_CARRY_BIT_POSITION, on);
     }
     /// Retrieves the current status of the half carry flag.
-    fn h(&self) -> bool {
+    pub fn h(&self) -> bool {
         (self.0 >> FLAGS_HALF_CARRY_BIT_POSITION) & 1 != 0
     }
     /// Sets the status of the half carry flag.
-    fn set_h(&mut self, on: bool) {
+    pub fn set_h(&mut self, on: bool) {
         self.set_flag(FLAGS_HALF_CARRY_BIT_POSITION, on);
     }
     /// Retrieves the current status of the subtract flag.
-    fn n(&self) -> bool {
+    pub fn n(&self) -> bool {
         (self.0 >> FLAGS_SUBTRACT_BIT_POSITION) & 1 != 0
     }
     /// Sets the status of the substract flag.
-    fn set_n(&mut self, on: bool) {
+    pub fn set_n(&mut self, on: bool) {
         self.set_flag(FLAGS_SUBTRACT_BIT_POSITION, on);
     }
     /// Retrieves the current status of the zero flag.
-    fn z(&self) -> bool {
+    pub fn z(&self) -> bool {
         (self.0 >> FLAGS_ZERO_BIT_POSITION) & 1 != 0
     }
     /// Sets the status of the zero flag.
-    fn set_z(&mut self, on: bool) {
+    pub fn set_z(&mut self, on: bool) {
         self.set_flag(FLAGS_ZERO_BIT_POSITION, on);
     }
     /// Sets the status of the flag at the given position.
-    fn set_flag(&mut self, pos: u8, on: bool) {
+    pub fn set_flag(&mut self, pos: u8, on: bool) {
         let flag = 1 << pos;
         let is_set = (self.0 & flag) != 0;
 
@@ -156,7 +156,7 @@ impl From<Flags> for u8 {
 /// Enumeration of the flag registers available for the conditional jump relative cpu instruction.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum CondJumpTarget {
+pub enum CondJumpTarget {
     /// Zero flag not on.
     NZ,
     /// Zero flag on.
@@ -177,7 +177,7 @@ impl Display for CondJumpTarget {
 /// Enumeration of the target registers available to be manipulated by the cpu instructions.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Target {
+pub enum Target {
     /// A register.
     A,
     /// B register.
@@ -212,7 +212,7 @@ impl Display for Target {
 /// Enumeration of the valid target 8 bit registers for the cpu instructions.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Target8Bit {
+pub enum Target8Bit {
     /// A register.
     A,
     /// B register.
@@ -239,7 +239,7 @@ impl Display for Target8Bit {
 /// Enumeration of the valid target 16-bit registers for the load instructions.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Target16Bit {
+pub enum Target16Bit {
     /// Combined BC 16-bit register.
     BC,
     /// Combined DE 16-bit register.
@@ -260,7 +260,7 @@ impl Display for Target16Bit {
 /// Enumeration of the valid target registers for the `PUSH` and `POP` instructions.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PushPopTarget {
+pub enum PushPopTarget {
     /// Combined BC register.
     BC,
     /// Combined DE register.
@@ -281,7 +281,7 @@ impl Display for PushPopTarget {
 /// Enumeration of the operations the [`Cpu`] is capable of executing.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Operation {
+pub enum Operation {
     /// Adds the value in the [`Target8Bit`] register and the value of the carry flag to the value
     /// in the `A` register and stores the result back to the `A` register.
     ADCA { target: Target8Bit },
@@ -704,13 +704,13 @@ impl Display for Operation {
 /// [`Operation`] that should be executed by the cpu but also how wide in bytes the instruction
 /// is as well as the number of clock ticks it takes to execute.
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct Instruction {
+pub struct Instruction {
     /// Number of bytes that make up the instruction.
-    num_bytes: u16,
+    pub num_bytes: u16,
     /// Number of system clock ticks it takes to execute the instruction.
-    clock_ticks: u64,
+    pub clock_ticks: u64,
     /// [`Operation`] which should be executed by the cpu.
-    operation: Operation,
+    pub operation: Operation,
 }
 
 impl Instruction {
@@ -1286,7 +1286,7 @@ impl Display for Instruction {
 /// Enumerates the different instruction sets that can be used when creating an [`Instruction`]
 /// from an op code.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum InstructionSet {
+pub enum InstructionSet {
     /// Default instruction set.
     Standard,
     /// Active when the previous instruction executed was `PREFIX` which has op code 0xCB.
@@ -1308,13 +1308,13 @@ pub struct Cpu {
     /// Registers read and written by the instructions.
     pub registers: Registers,
     /// Indicates the instruction set that should be used when decoding an op code.
-    instruction_set: InstructionSet,
+    pub instruction_set: InstructionSet,
     /// Tracks the history of [`Instruction`]s that were executed by the cpu.
-    history: BoundedVecDeque<Instruction>,
+    pub history: BoundedVecDeque<Instruction>,
     /// Flag indicating whether the cpu is in HALT mode.
-    halted: bool,
+    pub halted: bool,
     /// Flag indicating whether interrupts are currently enabled.
-    interruptable: bool,
+    pub interruptable: bool,
 }
 
 /// Default value for the maximum number of instructions stored in the instruction execution
@@ -1343,8 +1343,9 @@ impl Cpu {
             interruptable: true,
         }
     }
-    /// Reads and executes the next instruction based on the current program counter.
-    pub fn step(&mut self, memory: &mut MMU) {
+    /// Reads and executes the next instruction based on the current program counter. Returns the
+    /// number of clock ticks it took to execute the instruction.
+    pub fn step(&mut self, memory: &mut MMU) -> u64 {
         let op_code = memory.read_u8(self.registers.pc);
 
         let instruction = match self.instruction_set {
@@ -1363,10 +1364,15 @@ impl Cpu {
                 InstructionSet::Standard
             };
 
+            let clock_ticks = instruction.clock_ticks;
+
             self.history.push_front(instruction);
+
+            clock_ticks
         } else {
             tracing::warn!("skipping unknown instruction: {:#4x}", op_code);
-        };
+            0
+        }
     }
     /// Transforms the given op code into an [`Instruction`] which can be executed by the [`Cpu`].
     fn decode(&self, op_code: u8, memory: &MMU) -> Option<Instruction> {

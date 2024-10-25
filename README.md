@@ -23,5 +23,6 @@ $ JSON_TESTS_BASE_DIR=~/sm83/v1 cargo test -- --include-ignored
 
 ## Resources
 
+* Pan Docs - https://gbdev.io/pandocs/
 * CPU Op Codes - https://izik1.github.io/gbops
 * JSON CPU Instruction Test Suite - https://github.com/SingleStepTests/sm83

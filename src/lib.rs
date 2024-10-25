@@ -18,7 +18,7 @@ pub struct Emulator {
     /// [`MMU`] that is used to store data to and load various types of data.
     mmu: MMU,
     /// [`Cartridge`] that is currently loaded into the emulator.
-    cartridge: Cartridge,
+    _cartridge: Cartridge,
 }
 
 impl Emulator {
@@ -29,16 +29,12 @@ impl Emulator {
 
         Self {
             cpu,
-            cartridge,
+            _cartridge: cartridge,
             mmu,
         }
     }
     /// Runs the emulator. Currently, must be called after [`Emulator::load_cartridge`].
     pub fn run(&mut self) -> anyhow::Result<()> {
-        if !self.cartridge.header.is_valid() {
-            anyhow::bail!("Cartridge header checksum mismatch");
-        }
-
         // TODO: render boot screen
 
         self.cpu.registers.pc = START_INSTRUCTION;
