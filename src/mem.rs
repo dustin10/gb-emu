@@ -2,6 +2,8 @@ use crate::cart::MBC;
 
 use std::{cell::RefCell, rc::Rc};
 
+/// The memory map unit which is responsible for reading and writing the various types of memory
+/// available on the GameBoy.
 pub struct MMU {
     /// Memory bank controller from the [`Cartridge`].
     mbc: Rc<RefCell<dyn MBC>>,
