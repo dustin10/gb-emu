@@ -1,34 +1,32 @@
-use crate::{cartridge::Cartridge, cpu::Cpu, mem::Memory};
-
-pub mod cartridge;
+pub mod cart;
 pub mod cpu;
 pub mod mem;
 
+use crate::{cart::Cartridge, cpu::Cpu, mem::MMU};
+
+use std::rc::Rc;
+
 /// The [`Emulator`] struct is the container that is responsible for managing all of the subsystems
 /// required to emulate the Game Boy and play a game cartridge.
-#[derive(Debug)]
-pub struct Emulator<M>
-where
-    M: Memory,
-{
+pub struct Emulator {
     /// [`Cpu`] that is responsible for reading, decoding and executing instructions.
     cpu: Cpu,
-    /// [`Memory`] that is used to store data to and load data from by the [`Cpu`].
-    memory: M,
+    /// [`MMU`] that is used to store data to and load various types of data.
+    mmu: MMU,
     /// [`Cartridge`] that is currently loaded into the emulator.
     cartridge: Cartridge,
 }
 
-impl<M> Emulator<M>
-where
-    M: Memory,
-{
-    /// Creates a new [`Emulator`] with the given values.
-    pub fn new(cpu: Cpu, memory: M, cartridge: Cartridge) -> Self {
+impl Emulator {
+    /// Creates a new [`Emulator`] which is capable of playing the specified [`Cartridge`].
+    pub fn load(cartridge: Cartridge) -> Self {
+        let cpu = Cpu::new();
+        let mmu = MMU::new(Rc::clone(&cartridge.mbc));
+
         Self {
             cpu,
             cartridge,
-            memory,
+            mmu,
         }
     }
     /// Runs the emulator. Currently, must be called after [`Emulator::load_cartridge`].
@@ -37,10 +35,12 @@ where
             anyhow::bail!("Cartridge header checksum mismatch");
         }
 
-        self.cartridge.load(&mut self.memory);
+        // TODO: render boot screen
+
+        self.cpu.registers.pc = 0x0100;
 
         loop {
-            self.cpu.step(&mut self.memory);
+            self.cpu.step(&mut self.mmu);
         }
     }
 }

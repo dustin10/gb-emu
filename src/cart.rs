@@ -1,7 +1,8 @@
-use crate::mem::{Memory, MBC};
-
 use anyhow::Context;
-use std::path::Path;
+use std::{cell::RefCell, fmt::Display, path::Path, rc::Rc};
+
+/// Defines the maximum size of the addressable memory for the emulator.
+const ADDRESSABLE_MEMORY: usize = 65536;
 
 /// Address in emulator memory where the cartridge data is loaded.
 const CARTRIDGE_START_ADDR: u16 = 0x0000;
@@ -67,6 +68,106 @@ const COMPUTE_HEADER_CHECKSUM_START: usize = 0x0134;
 /// One past the address of the byte to end at when computing the header checksum.
 const COMPUTE_HEADER_CHECKSUM_END: usize = 0x014D;
 
+/// Enumerates various types of GameBoy cartridges supported by the emulator.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum CartridgeType {
+    /// No mapping required.
+    RomOnly,
+    /// Type 1 memory bank controller.
+    MBC1 { ram: bool, battery: bool },
+}
+
+pub trait MBC {
+    /// Reads a single byte from memory at the given address.
+    fn read(&self, address: u16) -> u8;
+    /// Writes a single byte to memory at the given address.
+    fn write(&mut self, address: u16, byte: u8);
+    /// Writes a block of bytes to memory at the given start address.
+    fn write_block(&mut self, start_addr: u16, bytes: &[u8]);
+}
+
+impl From<u8> for CartridgeType {
+    /// Creates the appropraite [`CartridgeType`] that maps to the given [`u8`] which represents
+    /// the memory bank controller that a [`crate::cartridge::Cartridge`] requires. This value is
+    /// read from the cartridge header.
+    ///
+    /// # Panic
+    ///
+    /// This function will panic when the cartridge type which the byte maps to has not yet been
+    /// implemented.
+    fn from(value: u8) -> Self {
+        match value {
+            0x00 => CartridgeType::RomOnly,
+            0x01 => CartridgeType::MBC1 {
+                ram: true,
+                battery: true,
+            },
+            0x02 => CartridgeType::MBC1 {
+                ram: true,
+                battery: false,
+            },
+            0x03 => CartridgeType::MBC1 {
+                ram: true,
+                battery: true,
+            },
+            _ => panic!("unsupported MBC type: {:#2x}", value),
+        }
+    }
+}
+
+impl Display for CartridgeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CartridgeType::RomOnly => f.write_str("ROM Only"),
+            CartridgeType::MBC1 { ram, battery } => {
+                f.write_fmt(format_args!("MBC1 RAM:{} Battery:{}", ram, battery))
+            }
+        }
+    }
+}
+
+/// [`RomOnly`] is an implementation of the [`MBC`] trait which does not do any special handling of
+/// memory addresses and simply reads and writes at the provided address.
+#[derive(Debug)]
+pub struct RomOnly {
+    /// Raw bytes of data contained in memory.
+    data: [u8; ADDRESSABLE_MEMORY],
+}
+
+impl RomOnly {
+    /// Creates a new default [`RomOnly`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl MBC for RomOnly {
+    /// Reads a single byte from memory at the given address.
+    fn read(&self, address: u16) -> u8 {
+        self.data[address as usize]
+    }
+    fn write(&mut self, address: u16, byte: u8) {
+        self.data[address as usize] = byte;
+    }
+    /// Writes a block of bytes to memory at the given start address.
+    fn write_block(&mut self, start_addr: u16, bytes: &[u8]) {
+        let num_bytes = bytes.len();
+        let dest_start = start_addr as usize;
+        let dest_end = dest_start + num_bytes;
+
+        self.data[dest_start..dest_end].copy_from_slice(&bytes[0..num_bytes]);
+    }
+}
+
+impl Default for RomOnly {
+    /// Creates a default [`RomOnly`] which has all data set to zero.
+    fn default() -> Self {
+        Self {
+            data: [0; ADDRESSABLE_MEMORY],
+        }
+    }
+}
+
 /// Holds the data that makes up the header of the [`Cartridge`]. The header contains data such as
 /// what [`MBC`] type to use, the title of the game, who made it, etc.
 #[derive(Debug)]
@@ -79,7 +180,7 @@ pub struct Header {
     pub manufacturer_code: String,
     /// Indicates what kind of hardware is present on the cartridge including the memory bank
     /// controller implementation.
-    pub mbc: MBC,
+    pub cartridge_type: CartridgeType,
     /// Indicates how much ROM is present on the cartridge. In most cases, the ROM size is given by
     /// 32 KiB × (1 << <value>).
     pub rom_size: u8,
@@ -114,8 +215,8 @@ pub struct Header {
 }
 
 impl Header {
-    /// Creates a new [`Header`] by parsing the relevant bytes from of the [`Cartridge`] data.
-    fn new(data: &[u8]) -> Self {
+    /// Creates a new [`Header`] by parsing the relevant bytes from of the specified [`Cartridge`] data.
+    fn parse(data: &[u8]) -> Self {
         let mut title_bytes = [0; 16];
         title_bytes[0..16].copy_from_slice(&data[TITLE_START_ADDR..=TITLE_END_ADDR]);
 
@@ -130,10 +231,10 @@ impl Header {
         let new_licensee_code: u16 = (data[NEW_LICENSEE_CODE_HIGH_ADDR] as u16)
             | ((data[NEW_LICENSEE_CODE_LOW_ADDR] as u16) >> 8);
 
-        let mbc = data[TYPE_ADDR].into();
+        let cartridge_type = data[TYPE_ADDR].into();
 
-        let ram_size = match mbc {
-            MBC::One { ram, .. } if ram => 0,
+        let ram_size = match cartridge_type {
+            CartridgeType::MBC1 { ram, .. } if ram => 0,
             _ => data[RAM_SIZE_ADDR],
         };
 
@@ -166,7 +267,7 @@ impl Header {
             cgb_flag: data[CGB_FLAG_ADDR],
             new_licensee_code,
             sgb_flag: data[SGB_FLAG_ADDR],
-            mbc,
+            cartridge_type,
             rom_size: data[ROM_SIZE_ADDR],
             ram_size,
             destination: data[DESTINATION_ADDR],
@@ -201,24 +302,17 @@ impl Header {
 }
 
 /// The [`Cartridge`] struct represents a game cartridge which is loaded into the Game Boy.
-#[derive(Debug)]
 pub struct Cartridge {
     /// Name of the game catridge.
     pub name: String,
-    /// Raw data contained in the cartridge.
-    data: Vec<u8>,
     /// Header data of the game cartridge.
     pub header: Header,
+    /// [`MBC`] implementation for the cartridge type.
+    pub mbc: Rc<RefCell<dyn MBC>>,
 }
 
 impl Cartridge {
-    /// Creates a new [`Cartridge`] with the given values.
-    pub fn new(name: String, data: Vec<u8>) -> Self {
-        let header = Header::new(&data);
-
-        Self { name, data, header }
-    }
-    /// Creates a new [`Cartridge`] by loading a ROM file from the given file path on disk.
+    /// Creates a new [`Cartridge`] from the GameBoy ROM file at the specified path.
     pub fn from_rom(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         tracing::debug!("load cartridge from rom file: {:?}", path.as_ref());
 
@@ -231,13 +325,15 @@ impl Cartridge {
         let data = std::fs::read(path.as_ref())
             .context(format!("read file: {}", path.as_ref().to_string_lossy()))?;
 
-        Ok(Self::new(name, data))
-    }
-    /// Loads the cartridge data into emulator memory.
-    pub fn load<M>(&self, memory: &mut M)
-    where
-        M: Memory,
-    {
-        memory.write_block(CARTRIDGE_START_ADDR, &self.data);
+        let header = Header::parse(&data);
+
+        let mbc = Rc::new(RefCell::new(match header.cartridge_type {
+            CartridgeType::RomOnly => RomOnly::new(),
+            _ => panic!("unsupported cartridge type: {}", header.cartridge_type),
+        }));
+
+        mbc.borrow_mut().write_block(CARTRIDGE_START_ADDR, &data);
+
+        Ok(Self { name, header, mbc })
     }
 }

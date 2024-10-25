@@ -1,69 +1,69 @@
-use crate::mem::Memory;
-
 use bounded_vec_deque::BoundedVecDeque;
 use std::fmt::Display;
 
+use crate::mem::MMU;
+
 /// Represents the registers on the cpu. Allows for easy manipulation of combined 16-bit registers as well.
 #[derive(Clone, Debug, Default)]
-struct Registers {
+pub struct Registers {
     /// A register.
-    a: u8,
+    pub a: u8,
     /// B register.
-    b: u8,
+    pub b: u8,
     /// C register.
-    c: u8,
+    pub c: u8,
     /// D register.
-    d: u8,
+    pub d: u8,
     /// E register.
-    e: u8,
+    pub e: u8,
     /// Special flags register.
-    f: Flags,
+    pub f: Flags,
     /// H register.
-    h: u8,
+    pub h: u8,
     /// L register.
-    l: u8,
+    pub l: u8,
     /// Program counter.
-    pc: u16,
+    pub pc: u16,
     /// Srack pointer.
-    sp: u16,
+    pub sp: u16,
 }
 
 impl Registers {
     /// Returns the combined value of the `A` and `F` registers.
-    fn af(&self) -> u16 {
+    pub fn af(&self) -> u16 {
         let f: u8 = self.f.into();
 
         (self.a as u16) << 8 | f as u16
     }
     /// Sets the values of the `A` and `F` registers by treating them as one 16 bit value.
-    fn set_af(&mut self, value: u16) {
+    pub fn set_af(&mut self, value: u16) {
         self.a = ((value & 0xFF00) >> 8) as u8;
         self.f = ((value & 0xFF) as u8).into();
     }
     /// Returns the combined value of the `B` and `C` registers.
-    fn bc(&self) -> u16 {
+    pub fn bc(&self) -> u16 {
         (self.b as u16) << 8 | self.c as u16
     }
     /// Sets the values of the `B` and `C` registers by treating them as one 16 bit value.
-    fn set_bc(&mut self, value: u16) {
+    pub fn set_bc(&mut self, value: u16) {
         self.b = ((value & 0xFF00) >> 8) as u8;
         self.c = (value & 0xFF) as u8;
     }
     /// Returns the combined value of the `D` and `E` registers.
-    fn de(&self) -> u16 {
+    pub fn de(&self) -> u16 {
         (self.d as u16) << 8 | self.e as u16
     }
     /// Sets the values of the `D` and `E` registers by treating them as one 16 bit value.
-    fn set_de(&mut self, value: u16) {
+    pub fn set_de(&mut self, value: u16) {
         self.d = ((value & 0xFF00) >> 8) as u8;
         self.e = (value & 0xFF) as u8;
     }
     /// Returns the combined value of the `H` and `L` registers.
-    fn hl(&self) -> u16 {
+    pub fn hl(&self) -> u16 {
         (self.h as u16) << 8 | self.l as u16
     }
     /// Sets the values of the `H` and `L` registers by treating them as one 16 bit value.
-    fn set_hl(&mut self, value: u16) {
+    pub fn set_hl(&mut self, value: u16) {
         self.h = ((value & 0xFF00) >> 8) as u8;
         self.l = (value & 0xFF) as u8;
     }
@@ -93,7 +93,7 @@ const FLAGS_ZERO_BIT_POSITION: u8 = 7;
 /// |---- Subtract
 /// ----- Zero
 #[derive(Clone, Copy, Debug, Default)]
-struct Flags(u8);
+pub struct Flags(u8);
 
 impl Flags {
     /// Retrieves the current status of the carry flag.
@@ -1306,7 +1306,7 @@ impl Default for InstructionSet {
 #[derive(Debug)]
 pub struct Cpu {
     /// Registers read and written by the instructions.
-    registers: Registers,
+    pub registers: Registers,
     /// Indicates the instruction set that should be used when decoding an op code.
     instruction_set: InstructionSet,
     /// Tracks the history of [`Instruction`]s that were executed by the cpu.
@@ -1344,7 +1344,7 @@ impl Cpu {
         }
     }
     /// Reads and executes the next instruction based on the current program counter.
-    pub fn step(&mut self, memory: &mut dyn Memory) {
+    pub fn step(&mut self, memory: &mut MMU) {
         let op_code = memory.read_u8(self.registers.pc);
 
         let instruction = match self.instruction_set {
@@ -1369,7 +1369,7 @@ impl Cpu {
         };
     }
     /// Transforms the given op code into an [`Instruction`] which can be executed by the [`Cpu`].
-    fn decode(&self, op_code: u8, memory: &dyn Memory) -> Option<Instruction> {
+    fn decode(&self, op_code: u8, memory: &MMU) -> Option<Instruction> {
         tracing::debug!("decode op code {:#4x}", op_code);
 
         match op_code {
@@ -2071,7 +2071,7 @@ impl Cpu {
     }
     /// Executes the given [`Instruction`] returning the new program counter value and whether or
     /// not the op code for the next instruction is prefixed.
-    fn execute(&mut self, instruction: &Instruction, memory: &mut dyn Memory) {
+    fn execute(&mut self, instruction: &Instruction, memory: &mut MMU) {
         tracing::debug!("execute instruction '{}'", instruction);
 
         match instruction.operation {
@@ -3491,12 +3491,12 @@ mod tests {
 
 #[cfg(test)]
 mod json_tests {
+    use crate::cart::RomOnly;
+
     use super::*;
 
-    use crate::mem::RomOnly;
-
     use serde::Deserialize;
-    use std::path::Path;
+    use std::{cell::RefCell, path::Path, rc::Rc};
 
     /// Contains the state of the cpu and memory at a point in the test lifecycle.
     #[derive(Debug, Deserialize)]
@@ -3556,7 +3556,8 @@ mod json_tests {
     fn execute(test: Test, instruction_set: InstructionSet) {
         println!("execute json test {}", test.name);
 
-        let mut memory = RomOnly::new();
+        let mbc = Rc::new(RefCell::new(RomOnly::new()));
+        let mut mmu = MMU::new(mbc);
 
         let mut cpu = Cpu::new();
         cpu.instruction_set = instruction_set;
@@ -3579,7 +3580,7 @@ mod json_tests {
             let address = byte[0];
             let value = byte[1] as u8;
 
-            memory.write_u8(address, value);
+            mmu.write_u8(address, value);
         }
 
         // mimic that we read the 0xCB byte and incremented pc if we are executing a JSON test for
@@ -3588,7 +3589,7 @@ mod json_tests {
             cpu.registers.pc = cpu.registers.pc.wrapping_add(1);
         }
 
-        cpu.step(&mut memory);
+        cpu.step(&mut mmu);
 
         let f_value: u8 = cpu.registers.f.into();
 
@@ -3611,7 +3612,7 @@ mod json_tests {
             let address = byte[0];
             let expected = byte[1] as u8;
 
-            let actual = memory.read_u8(address);
+            let actual = mmu.read_u8(address);
 
             assert_eq!(expected, actual);
         }
