@@ -118,9 +118,9 @@ impl Display for CartridgeType {
     }
 }
 
-/// The [`MBC`] trait defines the common behavior required for the various memory bank controllers
+/// The [`Mbc`] trait defines the common behavior required for the various memory bank controllers
 /// that can exist on a GameBoy cartridge.
-pub trait MBC {
+pub trait Mbc {
     /// Reads a single byte from memory at the given address.
     fn read(&self, address: u16) -> u8;
     /// Writes a single byte to memory at the given address.
@@ -144,7 +144,7 @@ impl RomOnly {
     }
 }
 
-impl MBC for RomOnly {
+impl Mbc for RomOnly {
     /// Reads a single byte from memory at the given address.
     fn read(&self, address: u16) -> u8 {
         self.data[address as usize]
@@ -219,7 +219,8 @@ pub struct Header {
 }
 
 impl Header {
-    /// Creates a new [`Header`] by parsing the relevant bytes from of the specified [`Cartridge`] data.
+    /// Creates a new [`Header`] by parsing the relevant bytes from of the specified [`Cartridge`]
+    /// data.
     fn parse(data: &[u8]) -> Self {
         let mut title_bytes = [0; 16];
         title_bytes[0..16].copy_from_slice(&data[TITLE_START_ADDR..=TITLE_END_ADDR]);
@@ -283,8 +284,19 @@ impl Header {
             computed_global_checksum,
         }
     }
+    /// Creates a new [`Header`] by parsing the relevant bytes from of the specified [`Cartridge`]
+    /// data. Once the header is parsed, the checksum is calculated and compared with the expected
+    /// value in order to validate the cartridge contents.
+    pub fn parse_and_validate(data: &[u8]) -> anyhow::Result<Self> {
+        let header = Self::parse(data);
+        if !header.is_valid() {
+            anyhow::bail!("invalid cartridge header checksum");
+        }
+
+        Ok(header)
+    }
     /// Determines if the header is valid by verifying the expected checksum value.
-    pub fn is_valid(&self) -> bool {
+    fn is_valid(&self) -> bool {
         self.expected_header_checksum == self.computed_header_checksum
     }
     /// Returns the licensee code as a string by inspecting the old license value from the header
@@ -311,8 +323,8 @@ pub struct Cartridge {
     pub name: String,
     /// Header data of the game cartridge.
     pub header: Header,
-    /// [`MBC`] implementation for the cartridge type.
-    pub mbc: Rc<RefCell<dyn MBC>>,
+    /// [`Mbc`] implementation for the cartridge type.
+    pub mbc: Rc<RefCell<dyn Mbc>>,
 }
 
 impl Cartridge {
@@ -329,18 +341,19 @@ impl Cartridge {
         let data = std::fs::read(path.as_ref())
             .context(format!("read file: {}", path.as_ref().to_string_lossy()))?;
 
-        let header = Header::parse(&data);
-        if !header.is_valid() {
-            anyhow::bail!("cartridge header checksum mismatch");
-        }
+        let header = Header::parse_and_validate(&data)?;
 
-        let mbc = Rc::new(RefCell::new(match header.cartridge_type {
+        let mut mbc = match header.cartridge_type {
             CartridgeType::RomOnly => RomOnly::new(),
             _ => anyhow::bail!("unsupported cartridge type: {}", header.cartridge_type),
-        }));
+        };
 
-        mbc.borrow_mut().write_block(CARTRIDGE_START_ADDR, &data);
+        mbc.write_block(CARTRIDGE_START_ADDR, &data);
 
-        Ok(Self { name, header, mbc })
+        Ok(Self {
+            name,
+            header,
+            mbc: Rc::new(RefCell::new(mbc)),
+        })
     }
 }

@@ -2,7 +2,7 @@ pub mod cart;
 pub mod cpu;
 pub mod mem;
 
-use crate::{cart::Cartridge, cpu::Cpu, mem::MMU};
+use crate::{cart::Cartridge, cpu::Cpu, mem::Mmu};
 
 use std::rc::Rc;
 
@@ -15,8 +15,8 @@ const START_INSTRUCTION: u16 = 0x0100;
 pub struct Emulator {
     /// [`Cpu`] that is responsible for reading, decoding and executing instructions.
     cpu: Cpu,
-    /// [`MMU`] that is used to store data to and load various types of data.
-    mmu: MMU,
+    /// [`Mmu`] that is used to store data to and load various types of data.
+    mmu: Mmu,
     /// [`Cartridge`] that is currently loaded into the emulator.
     _cartridge: Cartridge,
 }
@@ -25,7 +25,7 @@ impl Emulator {
     /// Creates a new [`Emulator`] which is capable of playing the specified [`Cartridge`].
     pub fn load(cartridge: Cartridge) -> Self {
         let cpu = Cpu::new();
-        let mmu = MMU::new(Rc::clone(&cartridge.mbc));
+        let mmu = Mmu::new(Rc::clone(&cartridge.mbc));
 
         Self {
             cpu,

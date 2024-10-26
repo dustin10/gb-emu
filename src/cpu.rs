@@ -1,4 +1,4 @@
-use crate::mem::MMU;
+use crate::mem::Mmu;
 
 use bounded_vec_deque::BoundedVecDeque;
 use std::fmt::Display;
@@ -1345,7 +1345,7 @@ impl Cpu {
     }
     /// Reads and executes the next instruction based on the current program counter. Returns the
     /// number of clock ticks it took to execute the instruction.
-    pub fn step(&mut self, memory: &mut MMU) -> u64 {
+    pub fn step(&mut self, memory: &mut Mmu) -> u64 {
         let op_code = memory.read_u8(self.registers.pc);
 
         let instruction = match self.instruction_set {
@@ -1375,7 +1375,7 @@ impl Cpu {
         }
     }
     /// Transforms the given op code into an [`Instruction`] which can be executed by the [`Cpu`].
-    fn decode(&self, op_code: u8, memory: &MMU) -> Option<Instruction> {
+    fn decode(&self, op_code: u8, memory: &Mmu) -> Option<Instruction> {
         tracing::debug!("decode op code {:#4x}", op_code);
 
         match op_code {
@@ -2077,7 +2077,7 @@ impl Cpu {
     }
     /// Executes the given [`Instruction`] returning the new program counter value and whether or
     /// not the op code for the next instruction is prefixed.
-    fn execute(&mut self, instruction: &Instruction, memory: &mut MMU) {
+    fn execute(&mut self, instruction: &Instruction, memory: &mut Mmu) {
         tracing::debug!("execute instruction '{}'", instruction);
 
         match instruction.operation {
@@ -3563,7 +3563,7 @@ mod json_tests {
         println!("execute json test {}", test.name);
 
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
-        let mut mmu = MMU::new(mbc);
+        let mut mmu = Mmu::new(mbc);
 
         let mut cpu = Cpu::new();
         cpu.instruction_set = instruction_set;

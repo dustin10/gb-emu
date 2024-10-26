@@ -1,17 +1,17 @@
-use crate::cart::MBC;
+use crate::cart::Mbc;
 
 use std::{cell::RefCell, rc::Rc};
 
 /// The memory map unit which is responsible for reading and writing the various types of memory
 /// available on the GameBoy.
-pub struct MMU {
+pub struct Mmu {
     /// Memory bank controller from the [`Cartridge`].
-    mbc: Rc<RefCell<dyn MBC>>,
+    mbc: Rc<RefCell<dyn Mbc>>,
 }
 
-impl MMU {
-    /// Creates a new [`MMU`].
-    pub fn new(mbc: Rc<RefCell<dyn MBC>>) -> Self {
+impl Mmu {
+    /// Creates a new [`Mmu`].
+    pub fn new(mbc: Rc<RefCell<dyn Mbc>>) -> Self {
         Self { mbc }
     }
     /// Reads a single byte from memory at the given address.
@@ -50,7 +50,7 @@ mod tests {
     fn test_mmu_rom_only_read_u8() {
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
 
-        let mut mmu = MMU::new(mbc);
+        let mut mmu = Mmu::new(mbc);
         mmu.write_u8(0x1010, 200);
 
         let byte = mmu.read_u8(0x1010);
@@ -61,7 +61,7 @@ mod tests {
     fn test_mmu_rom_only_read_u16() {
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
 
-        let mut mmu = MMU::new(mbc);
+        let mut mmu = Mmu::new(mbc);
         mmu.write_u8(0x1010, 0x01);
         mmu.write_u8(0x1011, 0x01);
 
@@ -74,7 +74,7 @@ mod tests {
         {
             let mbc = Rc::new(RefCell::new(RomOnly::new()));
 
-            let mut mmu = MMU::new(mbc);
+            let mut mmu = Mmu::new(mbc);
             mmu.write_u8(0x1010, 1);
 
             let value = mmu.read_i8(0x1010);
@@ -83,7 +83,7 @@ mod tests {
         {
             let mbc = Rc::new(RefCell::new(RomOnly::new()));
 
-            let mut mmu = MMU::new(mbc);
+            let mut mmu = Mmu::new(mbc);
             mmu.write_u8(0x1010, 0xFF);
 
             let value = mmu.read_i8(0x1010);
@@ -95,7 +95,7 @@ mod tests {
     fn test_mmu_rom_only_write_byte() {
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
 
-        let mut mmu = MMU::new(mbc);
+        let mut mmu = Mmu::new(mbc);
 
         mmu.write_u8(0x1010, 200);
         assert_eq!(200, mmu.read_u8(0x1010));
@@ -107,7 +107,7 @@ mod tests {
 
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
 
-        let mut mmu = MMU::new(mbc);
+        let mut mmu = Mmu::new(mbc);
         mmu.write_block(0x1010, &block);
 
         assert_eq!(200, mmu.read_u8(0x1010));
