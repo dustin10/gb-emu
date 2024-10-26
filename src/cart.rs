@@ -77,15 +77,6 @@ pub enum CartridgeType {
     MBC1 { ram: bool, battery: bool },
 }
 
-pub trait MBC {
-    /// Reads a single byte from memory at the given address.
-    fn read(&self, address: u16) -> u8;
-    /// Writes a single byte to memory at the given address.
-    fn write(&mut self, address: u16, byte: u8);
-    /// Writes a block of bytes to memory at the given start address.
-    fn write_block(&mut self, start_addr: u16, bytes: &[u8]);
-}
-
 impl From<u8> for CartridgeType {
     /// Creates the appropraite [`CartridgeType`] that maps to the given [`u8`] which represents
     /// the memory bank controller that a [`crate::cartridge::Cartridge`] requires. This value is
@@ -110,7 +101,7 @@ impl From<u8> for CartridgeType {
                 ram: true,
                 battery: true,
             },
-            _ => panic!("unsupported MBC type: {:#2x}", value),
+            _ => panic!("unsupported cartridge type: {:#2x}", value),
         }
     }
 }
@@ -125,6 +116,17 @@ impl Display for CartridgeType {
             }
         }
     }
+}
+
+/// The [`MBC`] trait defines the common behavior required for the various memory bank controllers
+/// that can exist on a GameBoy cartridge.
+pub trait MBC {
+    /// Reads a single byte from memory at the given address.
+    fn read(&self, address: u16) -> u8;
+    /// Writes a single byte to memory at the given address.
+    fn write(&mut self, address: u16, byte: u8);
+    /// Writes a block of bytes to memory at the given start address.
+    fn write_block(&mut self, start_addr: u16, bytes: &[u8]);
 }
 
 /// [`RomOnly`] is an implementation of the [`MBC`] trait which does not do any special handling of
