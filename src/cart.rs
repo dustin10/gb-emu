@@ -7,6 +7,15 @@ const ADDRESSABLE_MEMORY: usize = 65536;
 /// Address in emulator memory where the cartridge data is loaded.
 const CARTRIDGE_START_ADDR: u16 = 0x0000;
 
+/// Total number of bytes that make up the Nintendo logo stored on the cartridge.
+const NINTENDO_LOGO_LENGTH: usize = 48;
+
+/// Address of the byte to start at when reading the Nintendo logo.
+const NINTENDO_LOGO_START: usize = 0x0104;
+
+/// One past the address of the byte to end at when reading the Nintendo logo.
+const NINTENDO_LOGO_END: usize = 0x0133;
+
 /// Value set for the old licensee in the header when the new licensee value should be read
 /// instead.
 const OLD_LICENSEE_REDIRECT_VALUE: u8 = 0x33;
@@ -176,6 +185,9 @@ impl Default for RomOnly {
 /// the [`CartridgeType`], the title of the game, the company that made it, etc.
 #[derive(Debug)]
 pub struct Header {
+    /// Byte array containing the Nintendo logo that is displayed when the GameBoy is turned on. If
+    /// these bytes do not match a well-known value then the game will not be allowed to run.
+    pub nintendo_logo: [u8; 48],
     /// Title of the game in uppercase ASCII.
     pub title: String,
     /// In older cartridges these bytes were part of the Title (see above). In newer cartridges they
@@ -221,7 +233,11 @@ pub struct Header {
 impl Header {
     /// Creates a new [`Header`] by parsing the relevant bytes from of the specified [`Cartridge`]
     /// data.
-    fn parse(data: &[u8]) -> Self {
+    pub fn parse(data: &[u8]) -> Self {
+        let mut nintendo_logo = [0; NINTENDO_LOGO_LENGTH];
+        nintendo_logo[0..NINTENDO_LOGO_LENGTH]
+            .copy_from_slice(&data[NINTENDO_LOGO_START..=NINTENDO_LOGO_END]);
+
         let mut title_bytes = [0; 16];
         title_bytes[0..16].copy_from_slice(&data[TITLE_START_ADDR..=TITLE_END_ADDR]);
 
@@ -267,6 +283,7 @@ impl Header {
             | ((data[GLOBAL_CHECKSUM_HIGH_ADDR] as u16) << 8);
 
         Self {
+            nintendo_logo,
             title,
             manufacturer_code,
             cgb_flag: data[CGB_FLAG_ADDR],
