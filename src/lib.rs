@@ -125,8 +125,26 @@ impl Emulator {
 
             let ui = imgui.new_frame();
 
-            // replace with emulator UI
-            ui.show_demo_window(&mut true);
+            ui.window("Cartridge")
+                .size([300.0, 300.0], imgui::Condition::FirstUseEver)
+                .build(|| {
+                    ui.text(format!("Title: {}", &self.cartridge.header.title));
+                    ui.text(format!(
+                        "Version: {}",
+                        self.cartridge.header.version.to_string()
+                    ));
+                    ui.text(format!("Type: {}", self.cartridge.header.cartridge_type));
+                    ui.text(format!(
+                        "Header Checksum: Exp {}/Calc {}",
+                        self.cartridge.header.expected_header_checksum,
+                        self.cartridge.header.computed_header_checksum
+                    ));
+                    ui.text(format!(
+                        "Global Checksum: Exp {}/Calc {}",
+                        self.cartridge.header.expected_global_checksum,
+                        self.cartridge.header.computed_global_checksum
+                    ));
+                });
 
             let draw_data = imgui.render();
 

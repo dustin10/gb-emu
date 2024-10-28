@@ -241,13 +241,17 @@ impl Header {
         let mut title_bytes = [0; 16];
         title_bytes[0..16].copy_from_slice(&data[TITLE_START_ADDR..=TITLE_END_ADDR]);
 
-        let title = String::from_utf8_lossy(&title_bytes).to_string();
+        let title = String::from_utf8_lossy(&title_bytes)
+            .to_string()
+            .replace('\0', "");
 
         let mut manufacturer_code_bytes = [0; 4];
         manufacturer_code_bytes[0..4]
             .copy_from_slice(&data[MANUFACTURER_START_ADDR..=MANUFACTURER_END_ADDR]);
 
-        let manufacturer_code = String::from_utf8_lossy(&manufacturer_code_bytes).to_string();
+        let manufacturer_code = String::from_utf8_lossy(&manufacturer_code_bytes)
+            .to_string()
+            .replace('\0', "");
 
         let new_licensee_code: u16 = (data[NEW_LICENSEE_CODE_HIGH_ADDR] as u16)
             | ((data[NEW_LICENSEE_CODE_LOW_ADDR] as u16) >> 8);
