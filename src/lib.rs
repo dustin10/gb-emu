@@ -61,7 +61,7 @@ impl Emulator {
         video_subsystem.gl_attr().set_context_version(3, 3);
 
         let window = match video_subsystem
-            .window("GameBoy Emulator", 1024, 768)
+            .window("GameBoy Emulator", 1280, 720)
             .allow_highdpi()
             .opengl()
             .position_centered()
