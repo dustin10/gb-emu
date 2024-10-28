@@ -128,11 +128,8 @@ impl Emulator {
             ui.window("Cartridge")
                 .size([300.0, 300.0], imgui::Condition::FirstUseEver)
                 .build(|| {
-                    ui.text(format!("Title: {}", &self.cartridge.header.title));
-                    ui.text(format!(
-                        "Version: {}",
-                        self.cartridge.header.version.to_string()
-                    ));
+                    ui.text(format!("Title: {}", self.cartridge.header.title));
+                    ui.text(format!("Version: {}", self.cartridge.header.version));
                     ui.text(format!("Type: {}", self.cartridge.header.cartridge_type));
                     ui.text(format!(
                         "Header Checksum: Exp {}/Calc {}",
