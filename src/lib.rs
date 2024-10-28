@@ -25,7 +25,7 @@ pub struct Emulator {
     /// [`Mmu`] that is used to store data to and load various types of data.
     mmu: Mmu,
     /// [`Cartridge`] that is currently loaded into the emulator.
-    _cartridge: Cartridge,
+    cartridge: Cartridge,
 }
 
 impl Emulator {
@@ -36,7 +36,7 @@ impl Emulator {
 
         Self {
             cpu,
-            _cartridge: cartridge,
+            cartridge,
             mmu,
         }
     }
@@ -61,7 +61,7 @@ impl Emulator {
         video_subsystem.gl_attr().set_context_version(3, 3);
 
         let window = match video_subsystem
-            .window("GameBoy Emulator", 1280, 720)
+            .window(&self.cartridge.name, 1280, 720)
             .allow_highdpi()
             .opengl()
             .position_centered()
