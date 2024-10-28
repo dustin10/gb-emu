@@ -4,7 +4,7 @@ pub mod mem;
 
 use crate::{cart::Cartridge, cpu::Cpu, mem::Mmu};
 
-use imgui::Context;
+use imgui::{Context, TreeNodeFlags, Ui};
 use imgui_glow_renderer::{
     glow::{self, HasContext},
     AutoRenderer,
@@ -60,8 +60,13 @@ impl Emulator {
         #[cfg(target_os = "macos")]
         video_subsystem.gl_attr().set_context_version(3, 3);
 
+        let window_title = format!(
+            "GameBoy Emulator - {} [{}]",
+            self.cartridge.header.title, self.cartridge.name
+        );
+
         let window = match video_subsystem
-            .window(&self.cartridge.name, 1280, 720)
+            .window(&window_title, 1280, 720)
             .allow_highdpi()
             .opengl()
             .position_centered()
@@ -125,9 +130,37 @@ impl Emulator {
 
             let ui = imgui.new_frame();
 
-            ui.window("Cartridge")
-                .size([300.0, 300.0], imgui::Condition::FirstUseEver)
-                .build(|| {
+            self.render_imgui(ui);
+            //ui.show_demo_window(&mut true);
+
+            let draw_data = imgui.render();
+
+            unsafe { renderer.gl_context().clear(glow::COLOR_BUFFER_BIT) };
+            renderer.render(draw_data).expect("scene can be drawn");
+
+            window.gl_swap_window();
+        }
+
+        tracing::debug!("exited main loop");
+
+        Ok(())
+    }
+    fn render_imgui(&self, ui: &mut Ui) {
+        if let Some(emu_win_token) = ui
+            .window("GameBoy Emulator Window")
+            .size([1280.0, 720.0], imgui::Condition::FirstUseEver)
+            .position([0.0, 0.0], imgui::Condition::FirstUseEver)
+            .no_decoration()
+            .begin()
+        {
+            if let Some(left_panel_win_token) = ui
+                .window("Left Panel")
+                .no_decoration()
+                .size([300.0, 720.0], imgui::Condition::FirstUseEver)
+                .position([0.0, 0.0], imgui::Condition::FirstUseEver)
+                .begin()
+            {
+                if let Some(cart_tree_node) = ui.tree_node("Cartridge") {
                     ui.text(format!("Title: {}", self.cartridge.header.title));
                     ui.text(format!("Version: {}", self.cartridge.header.version));
                     ui.text(format!("Type: {}", self.cartridge.header.cartridge_type));
@@ -141,19 +174,48 @@ impl Emulator {
                         self.cartridge.header.expected_global_checksum,
                         self.cartridge.header.computed_global_checksum
                     ));
-                });
 
-            let draw_data = imgui.render();
+                    cart_tree_node.end();
+                }
 
-            unsafe { renderer.gl_context().clear(glow::COLOR_BUFFER_BIT) };
-            renderer.render(draw_data).expect("scene can be drawn");
+                if let Some(cpu_reg_tree_node) = ui.tree_node("Registers") {
+                    ui.text(format!("pc: {}", self.cpu.registers.pc));
+                    ui.text(format!("sp: {}", self.cpu.registers.sp));
+                    ui.separator();
+                    ui.text(format!("a: {}", self.cpu.registers.a));
+                    ui.text(format!("b: {}", self.cpu.registers.b));
+                    ui.text(format!("c: {}", self.cpu.registers.c));
+                    ui.text(format!("d: {}", self.cpu.registers.d));
+                    ui.text(format!("e: {}", self.cpu.registers.e));
+                    ui.text(format!("h: {}", self.cpu.registers.h));
+                    ui.text(format!("l: {}", self.cpu.registers.l));
 
-            window.gl_swap_window();
+                    cpu_reg_tree_node.end();
+                }
+
+                left_panel_win_token.end();
+            }
+
+            if let Some(right_panel_win_token) = ui
+                .window("Right Panel")
+                .no_decoration()
+                .size([300.0, 720.0], imgui::Condition::FirstUseEver)
+                .position([980.0, 0.0], imgui::Condition::FirstUseEver)
+                .begin()
+            {
+                if let Some(inst_tree_node) = ui.tree_node("Instructions") {
+                    for inst in self.cpu.history.iter().take(40) {
+                        ui.text(format!("{}", inst));
+                    }
+
+                    inst_tree_node.end();
+                }
+
+                right_panel_win_token.end();
+            }
+
+            emu_win_token.end();
         }
-
-        tracing::debug!("exited main loop");
-
-        Ok(())
     }
 }
 
