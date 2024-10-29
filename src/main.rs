@@ -1,6 +1,9 @@
 use anyhow::Context;
 use clap::Parser;
-use gb_emu::{cart::Cartridge, Emulator};
+use gb_emu::{
+    DebugMode,
+    {cart::Cartridge, Emulator},
+};
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
@@ -38,5 +41,5 @@ fn main() -> anyhow::Result<()> {
 
     let cartridge = Cartridge::from_rom(args.rom).context("create Cartridge from ROM file")?;
 
-    Emulator::load(cartridge).run()
+    Emulator::new(cartridge, DebugMode::Pause).run()
 }

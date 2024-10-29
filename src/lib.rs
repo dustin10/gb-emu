@@ -24,7 +24,7 @@ pub enum DebugMode {
     Disabled,
     /// Game execution is paused, the cpu does not step forward.
     Pause,
-    /// Instruction execution can be stepped through one instruction at a time.
+    /// Game execution will will take one step forward and pause afterwards.
     Step,
 }
 
@@ -43,7 +43,7 @@ pub struct Emulator {
 
 impl Emulator {
     /// Creates a new [`Emulator`] which is capable of playing the specified [`Cartridge`].
-    pub fn load(cartridge: Cartridge) -> Self {
+    pub fn new(cartridge: Cartridge, debug_mode: DebugMode) -> Self {
         let cpu = Cpu::new();
         let mmu = Mmu::new(Rc::clone(&cartridge.mbc));
 
@@ -51,7 +51,7 @@ impl Emulator {
             cpu,
             cartridge,
             mmu,
-            debug_mode: DebugMode::Pause,
+            debug_mode,
         }
     }
     /// Runs the emulator.
@@ -125,7 +125,7 @@ impl Emulator {
         self.cpu.registers.pc = START_INSTRUCTION;
 
         'main: loop {
-            let _ticks = match self.debug_mode {
+            let ticks = match self.debug_mode {
                 DebugMode::Disabled => self.cpu.step(&mut self.mmu),
                 DebugMode::Pause => 0,
                 DebugMode::Step => {
@@ -133,6 +133,10 @@ impl Emulator {
                     self.cpu.step(&mut self.mmu)
                 }
             };
+
+            if ticks > 0 {
+                // TODO: run other systems for ticks number of cycles
+            }
 
             for event in event_pump.poll_iter() {
                 platform.handle_event(&mut imgui, &event);
