@@ -153,6 +153,12 @@ impl From<Flags> for u8 {
     }
 }
 
+impl Display for Flags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Enumeration of the flag registers available for the conditional jump relative cpu instruction.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1291,6 +1297,12 @@ pub enum InstructionSet {
     Standard,
     /// Active when the previous instruction executed was `PREFIX` which has op code 0xCB.
     Prefixed,
+}
+
+impl Display for InstructionSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:?}", self))
+    }
 }
 
 impl Default for InstructionSet {

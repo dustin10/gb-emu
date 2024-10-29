@@ -17,15 +17,28 @@ use std::rc::Rc;
 /// displayed in order to start executing the cartridge instructions.
 const START_INSTRUCTION: u16 = 0x0100;
 
+/// Enumerates the different states that the emulator can be in when using the debug functionality.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DebugMode {
+    /// Debugging is disabled, game runs as normal.
+    Disabled,
+    /// Game execution is paused, the cpu does not step forward.
+    Pause,
+    /// Instruction execution can be stepped through one instruction at a time.
+    Step,
+}
+
 /// The [`Emulator`] struct is the container that is responsible for managing all of the subsystems
 /// required to emulate the Game Boy and play a game cartridge.
 pub struct Emulator {
     /// [`Cpu`] that is responsible for reading, decoding and executing instructions.
-    cpu: Cpu,
+    pub cpu: Cpu,
     /// [`Mmu`] that is used to store data to and load various types of data.
-    mmu: Mmu,
+    pub mmu: Mmu,
     /// [`Cartridge`] that is currently loaded into the emulator.
-    cartridge: Cartridge,
+    pub cartridge: Cartridge,
+    /// Current debug mode of the emulator.
+    pub debug_mode: DebugMode,
 }
 
 impl Emulator {
@@ -38,6 +51,7 @@ impl Emulator {
             cpu,
             cartridge,
             mmu,
+            debug_mode: DebugMode::Pause,
         }
     }
     /// Runs the emulator.
@@ -111,7 +125,14 @@ impl Emulator {
         self.cpu.registers.pc = START_INSTRUCTION;
 
         'main: loop {
-            let _ticks = self.cpu.step(&mut self.mmu);
+            let _ticks = match self.debug_mode {
+                DebugMode::Disabled => self.cpu.step(&mut self.mmu),
+                DebugMode::Pause => 0,
+                DebugMode::Step => {
+                    self.debug_mode = DebugMode::Pause;
+                    self.cpu.step(&mut self.mmu)
+                }
+            };
 
             for event in event_pump.poll_iter() {
                 platform.handle_event(&mut imgui, &event);
@@ -122,6 +143,18 @@ impl Emulator {
                         keycode: Some(Keycode::Escape),
                         ..
                     } => break 'main,
+                    Event::KeyUp {
+                        keycode: Some(Keycode::H),
+                        ..
+                    } => self.debug_pause(),
+                    Event::KeyUp {
+                        keycode: Some(Keycode::J),
+                        ..
+                    } => self.debug_step(),
+                    Event::KeyUp {
+                        keycode: Some(Keycode::K),
+                        ..
+                    } => self.debug_continue(),
                     _ => {}
                 }
             }
@@ -131,7 +164,6 @@ impl Emulator {
             let ui = imgui.new_frame();
 
             self.render_imgui(ui);
-            //ui.show_demo_window(&mut true);
 
             let draw_data = imgui.render();
 
@@ -145,76 +177,104 @@ impl Emulator {
 
         Ok(())
     }
-    fn render_imgui(&self, ui: &mut Ui) {
-        if let Some(emu_win_token) = ui
-            .window("GameBoy Emulator Window")
-            .size([1280.0, 720.0], imgui::Condition::FirstUseEver)
-            .position([0.0, 0.0], imgui::Condition::FirstUseEver)
+    /// Pauses the emulator instruction processing.
+    fn debug_pause(&mut self) {
+        tracing::debug!("instruction execution paused");
+        self.debug_mode = DebugMode::Pause;
+    }
+    /// Steps the emulator forward one instruction.
+    fn debug_step(&mut self) {
+        tracing::debug!("stepping forward one instruction");
+        self.debug_mode = DebugMode::Step;
+    }
+    /// Resumes normal emulator execution.
+    fn debug_continue(&mut self) {
+        tracing::debug!("resuming normal instruction execution");
+        self.debug_mode = DebugMode::Disabled;
+    }
+    /// Draws the ImGUI UI for the frame.
+    fn render_imgui(&mut self, ui: &mut Ui) {
+        if let Some(left_panel_win_token) = ui
+            .window("Left Panel")
             .no_decoration()
+            .size([320.0, 720.0], imgui::Condition::FirstUseEver)
+            .position([0.0, 0.0], imgui::Condition::FirstUseEver)
             .begin()
         {
-            if let Some(left_panel_win_token) = ui
-                .window("Left Panel")
-                .no_decoration()
-                .size([300.0, 720.0], imgui::Condition::FirstUseEver)
-                .position([0.0, 0.0], imgui::Condition::FirstUseEver)
-                .begin()
-            {
-                if let Some(cart_tree_node) = ui.tree_node("Cartridge") {
-                    ui.text(format!("Title: {}", self.cartridge.header.title));
-                    ui.text(format!("Version: {}", self.cartridge.header.version));
-                    ui.text(format!("Type: {}", self.cartridge.header.cartridge_type));
-                    ui.text(format!(
-                        "Header Checksum: Exp {}/Calc {}",
-                        self.cartridge.header.expected_header_checksum,
-                        self.cartridge.header.computed_header_checksum
-                    ));
-                    ui.text(format!(
-                        "Global Checksum: Exp {}/Calc {}",
-                        self.cartridge.header.expected_global_checksum,
-                        self.cartridge.header.computed_global_checksum
-                    ));
-
-                    cart_tree_node.end();
-                }
-
-                if let Some(cpu_reg_tree_node) = ui.tree_node("Registers") {
-                    ui.text(format!("pc: {}", self.cpu.registers.pc));
-                    ui.text(format!("sp: {}", self.cpu.registers.sp));
-                    ui.separator();
-                    ui.text(format!("a: {}", self.cpu.registers.a));
-                    ui.text(format!("b: {}", self.cpu.registers.b));
-                    ui.text(format!("c: {}", self.cpu.registers.c));
-                    ui.text(format!("d: {}", self.cpu.registers.d));
-                    ui.text(format!("e: {}", self.cpu.registers.e));
-                    ui.text(format!("h: {}", self.cpu.registers.h));
-                    ui.text(format!("l: {}", self.cpu.registers.l));
-
-                    cpu_reg_tree_node.end();
-                }
-
-                left_panel_win_token.end();
+            if ui.collapsing_header("Cartridge", TreeNodeFlags::DEFAULT_OPEN) {
+                ui.text(format!("Title: {}", self.cartridge.header.title));
+                ui.text(format!(
+                    "Licensee Code: {}",
+                    self.cartridge.header.licensee_code()
+                ));
+                ui.text(format!("Version: {}", self.cartridge.header.version));
+                ui.text(format!("Type: {}", self.cartridge.header.cartridge_type));
+                ui.text(format!(
+                    "Header Checksum: Exp {}/Calc {}",
+                    self.cartridge.header.expected_header_checksum,
+                    self.cartridge.header.computed_header_checksum
+                ));
+                ui.text(format!(
+                    "Global Checksum: Exp {}/Calc {}",
+                    self.cartridge.header.expected_global_checksum,
+                    self.cartridge.header.computed_global_checksum
+                ));
             }
 
-            if let Some(right_panel_win_token) = ui
-                .window("Right Panel")
-                .no_decoration()
-                .size([300.0, 720.0], imgui::Condition::FirstUseEver)
-                .position([980.0, 0.0], imgui::Condition::FirstUseEver)
-                .begin()
-            {
-                if let Some(inst_tree_node) = ui.tree_node("Instructions") {
-                    for inst in self.cpu.history.iter().take(40) {
-                        ui.text(format!("{}", inst));
-                    }
-
-                    inst_tree_node.end();
-                }
-
-                right_panel_win_token.end();
+            if ui.collapsing_header("CPU", TreeNodeFlags::DEFAULT_OPEN) {
+                ui.text(format!("PC: {}", self.cpu.registers.pc));
+                ui.text(format!("SP: {}", self.cpu.registers.sp));
+                ui.separator();
+                ui.text(format!("A: {}", self.cpu.registers.a));
+                ui.text(format!("B: {}", self.cpu.registers.b));
+                ui.text(format!("C: {}", self.cpu.registers.c));
+                ui.text(format!("D: {}", self.cpu.registers.d));
+                ui.text(format!("E: {}", self.cpu.registers.e));
+                ui.text(format!("F: {}", self.cpu.registers.f));
+                ui.text(format!("H: {}", self.cpu.registers.h));
+                ui.text(format!("L: {}", self.cpu.registers.l));
+                ui.separator();
+                ui.text(format!("Z: {}", self.cpu.registers.f.z()));
+                ui.text(format!("N: {}", self.cpu.registers.f.n()));
+                ui.text(format!("H: {}", self.cpu.registers.f.h()));
+                ui.text(format!("C: {}", self.cpu.registers.f.c()));
+                ui.separator();
+                ui.text(format!("Halted: {}", self.cpu.halted));
+                ui.text(format!("Interruptable: {}", self.cpu.interruptable));
+                ui.text(format!("Instruction Set: {}", self.cpu.instruction_set));
             }
 
-            emu_win_token.end();
+            left_panel_win_token.end();
+        }
+
+        if let Some(right_panel_win_token) = ui
+            .window("Right Panel")
+            .no_decoration()
+            .size([320.0, 720.0], imgui::Condition::FirstUseEver)
+            .position([980.0, 0.0], imgui::Condition::FirstUseEver)
+            .begin()
+        {
+            if ui.collapsing_header("Debug", TreeNodeFlags::DEFAULT_OPEN) {
+                if ui.button("Pause") {
+                    self.debug_pause();
+                }
+                ui.same_line();
+                if ui.button("Step") {
+                    self.debug_step();
+                }
+                ui.same_line();
+                if ui.button("Continue") {
+                    self.debug_continue();
+                }
+            }
+
+            if ui.collapsing_header("Instructions", TreeNodeFlags::DEFAULT_OPEN) {
+                for inst in self.cpu.history.iter().take(40) {
+                    ui.text(format!("{}", inst));
+                }
+            }
+
+            right_panel_win_token.end();
         }
     }
 }
