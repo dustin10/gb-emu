@@ -1285,7 +1285,10 @@ impl Display for Instruction {
     /// simply defers to the [`Display`] trait implementation for the [`Operation`] owned by the
     /// [`Instruction`].
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.operation.fmt(f)
+        f.write_fmt(format_args!(
+            "{} [{}, {}]",
+            self.operation, self.num_bytes, self.clock_ticks
+        ))
     }
 }
 
