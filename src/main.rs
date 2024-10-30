@@ -17,6 +17,13 @@ struct Args {
         help = "Required. Specifies the path to the ROM file to run."
     )]
     rom: String,
+    /// Flag that if set causes the emulator to start up with debug mode set to [`DebugMode::Pause`].
+    #[arg(
+        short,
+        long,
+        help = "Optional. If set, starts the emulator in debug mode."
+    )]
+    debug: bool,
 }
 
 /// Main entry point into the emulator application.
@@ -41,5 +48,11 @@ fn main() -> anyhow::Result<()> {
 
     let cartridge = Cartridge::from_rom(args.rom).context("create Cartridge from ROM file")?;
 
-    Emulator::new(cartridge, DebugMode::Pause).run()
+    let debug_mode = if args.debug {
+        DebugMode::Pause
+    } else {
+        DebugMode::Disabled
+    };
+
+    Emulator::new(cartridge, debug_mode).run()
 }

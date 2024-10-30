@@ -3512,12 +3512,29 @@ mod tests {
 
 #[cfg(test)]
 mod json_tests {
-    use crate::cart::RomOnly;
+    use crate::{cart::RomOnly, input::Input};
 
     use super::*;
 
     use serde::Deserialize;
     use std::{cell::RefCell, path::Path, rc::Rc};
+
+    struct TestInput;
+
+    impl Input for TestInput {
+        fn button_down(&mut self, _button: crate::input::Button) {}
+        fn button_up(&mut self, _button: crate::input::Button) {}
+        fn handles_write(&self, _address: u16) -> bool {
+            false
+        }
+        fn write(&mut self, _byte: u8) {}
+        fn handles_read(&self, _address: u16) -> bool {
+            false
+        }
+        fn read(&self) -> u8 {
+            0
+        }
+    }
 
     /// Contains the state of the cpu and memory at a point in the test lifecycle.
     #[derive(Debug, Deserialize)]
@@ -3578,7 +3595,8 @@ mod json_tests {
         println!("execute json test {}", test.name);
 
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
-        let mut mmu = Mmu::new(mbc);
+        let input = Rc::new(RefCell::new(TestInput));
+        let mut mmu = Mmu::new(mbc, input);
 
         let mut cpu = Cpu::new();
         cpu.instruction_set = instruction_set;

@@ -1,8 +1,14 @@
 pub mod cart;
 pub mod cpu;
+pub mod input;
 pub mod mem;
 
-use crate::{cart::Cartridge, cpu::Cpu, mem::Mmu};
+use crate::{
+    cart::Cartridge,
+    cpu::Cpu,
+    input::{Button, Input},
+    mem::Mmu,
+};
 
 use imgui::{Context, TreeNodeFlags, Ui};
 use imgui_glow_renderer::{
@@ -10,8 +16,9 @@ use imgui_glow_renderer::{
     AutoRenderer,
 };
 use imgui_sdl2_support::SdlPlatform;
+use input::Controller;
 use sdl2::{event::Event, keyboard::Keycode, video::Window};
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 /// Contains the memory address the program counter should be set to after the boot screen is
 /// displayed in order to start executing the cartridge instructions.
@@ -37,6 +44,8 @@ pub struct Emulator {
     pub mmu: Mmu,
     /// [`Cartridge`] that is currently loaded into the emulator.
     pub cartridge: Cartridge,
+    /// [`Input`] that allows a user to give input to the emulator.
+    pub input: Rc<RefCell<dyn Input>>,
     /// Current debug mode of the emulator.
     pub debug_mode: DebugMode,
 }
@@ -45,12 +54,14 @@ impl Emulator {
     /// Creates a new [`Emulator`] which is capable of playing the specified [`Cartridge`].
     pub fn new(cartridge: Cartridge, debug_mode: DebugMode) -> Self {
         let cpu = Cpu::new();
-        let mmu = Mmu::new(Rc::clone(&cartridge.mbc));
+        let input: Rc<RefCell<dyn Input>> = Rc::new(RefCell::new(Controller::new()));
+        let mmu = Mmu::new(Rc::clone(&cartridge.mbc), Rc::clone(&input));
 
         Self {
             cpu,
-            cartridge,
             mmu,
+            cartridge,
+            input,
             debug_mode,
         }
     }
@@ -142,23 +153,96 @@ impl Emulator {
                 platform.handle_event(&mut imgui, &event);
 
                 match event {
+                    // quit
                     Event::Quit { .. }
                     | Event::KeyUp {
                         keycode: Some(Keycode::Escape),
                         ..
                     } => break 'main,
-                    Event::KeyUp {
-                        keycode: Some(Keycode::H),
+
+                    // d-pad
+                    Event::KeyDown {
+                        keycode: Some(Keycode::W),
                         ..
-                    } => self.debug_pause(),
+                    } => self.input.borrow_mut().button_down(Button::Up),
                     Event::KeyUp {
-                        keycode: Some(Keycode::J),
+                        keycode: Some(Keycode::W),
                         ..
-                    } => self.debug_step(),
+                    } => self.input.borrow_mut().button_up(Button::Up),
+                    Event::KeyDown {
+                        keycode: Some(Keycode::S),
+                        ..
+                    } => self.input.borrow_mut().button_down(Button::Down),
+                    Event::KeyUp {
+                        keycode: Some(Keycode::S),
+                        ..
+                    } => self.input.borrow_mut().button_up(Button::Down),
+                    Event::KeyDown {
+                        keycode: Some(Keycode::A),
+                        ..
+                    } => self.input.borrow_mut().button_down(Button::Left),
+                    Event::KeyUp {
+                        keycode: Some(Keycode::A),
+                        ..
+                    } => self.input.borrow_mut().button_up(Button::Left),
+                    Event::KeyDown {
+                        keycode: Some(Keycode::D),
+                        ..
+                    } => self.input.borrow_mut().button_down(Button::Right),
+                    Event::KeyUp {
+                        keycode: Some(Keycode::D),
+                        ..
+                    } => self.input.borrow_mut().button_up(Button::Right),
+
+                    // buttons
+                    Event::KeyDown {
+                        keycode: Some(Keycode::E),
+                        ..
+                    } => self.input.borrow_mut().button_down(Button::Start),
+                    Event::KeyUp {
+                        keycode: Some(Keycode::E),
+                        ..
+                    } => self.input.borrow_mut().button_up(Button::Start),
+                    Event::KeyDown {
+                        keycode: Some(Keycode::Q),
+                        ..
+                    } => self.input.borrow_mut().button_down(Button::Select),
+                    Event::KeyUp {
+                        keycode: Some(Keycode::Q),
+                        ..
+                    } => self.input.borrow_mut().button_up(Button::Select),
+                    Event::KeyDown {
+                        keycode: Some(Keycode::K),
+                        ..
+                    } => self.input.borrow_mut().button_down(Button::A),
                     Event::KeyUp {
                         keycode: Some(Keycode::K),
                         ..
+                    } => self.input.borrow_mut().button_up(Button::A),
+                    Event::KeyDown {
+                        keycode: Some(Keycode::J),
+                        ..
+                    } => self.input.borrow_mut().button_down(Button::B),
+                    Event::KeyUp {
+                        keycode: Some(Keycode::J),
+                        ..
+                    } => self.input.borrow_mut().button_up(Button::B),
+
+                    // debug
+                    Event::KeyUp {
+                        keycode: Some(Keycode::P),
+                        ..
+                    } => self.debug_pause(),
+                    Event::KeyUp {
+                        keycode: Some(Keycode::N),
+                        ..
+                    } => self.debug_step(),
+                    Event::KeyUp {
+                        keycode: Some(Keycode::C),
+                        ..
                     } => self.debug_continue(),
+
+                    // not mapped
                     _ => {}
                 }
             }
@@ -196,7 +280,7 @@ impl Emulator {
         tracing::debug!("resuming normal instruction execution");
         self.debug_mode = DebugMode::Disabled;
     }
-    /// Draws the ImGUI UI for the frame.
+    /// Draws the ImGUI UI for the frame based on the state of the emulator.
     fn render_imgui(&mut self, ui: &mut Ui) {
         if let Some(left_panel_win_token) = ui
             .window("Left Panel")
