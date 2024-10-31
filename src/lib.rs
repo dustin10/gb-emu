@@ -195,19 +195,19 @@ impl Emulator {
 
                     // buttons
                     Event::KeyDown {
-                        keycode: Some(Keycode::E),
+                        keycode: Some(Keycode::I),
                         ..
                     } => self.input.borrow_mut().button_down(Button::Start),
                     Event::KeyUp {
-                        keycode: Some(Keycode::E),
+                        keycode: Some(Keycode::I),
                         ..
                     } => self.input.borrow_mut().button_up(Button::Start),
                     Event::KeyDown {
-                        keycode: Some(Keycode::Q),
+                        keycode: Some(Keycode::U),
                         ..
                     } => self.input.borrow_mut().button_down(Button::Select),
                     Event::KeyUp {
-                        keycode: Some(Keycode::Q),
+                        keycode: Some(Keycode::U),
                         ..
                     } => self.input.borrow_mut().button_up(Button::Select),
                     Event::KeyDown {
@@ -352,6 +352,31 @@ impl Emulator {
                 ui.same_line();
                 if ui.button("Continue") {
                     self.debug_continue();
+                }
+                ui.same_line();
+                if ui.button("Key Bindings") {
+                    ui.open_popup("key-bindings");
+                }
+                if let Some(key_binds_popup) = ui.begin_popup("key-bindings") {
+                    ui.text("Joypad");
+                    ui.text("Up: W");
+                    ui.text("Down: S");
+                    ui.text("Left: A");
+                    ui.text("Right: D");
+                    ui.text("Select: U");
+                    ui.text("Start: I");
+                    ui.text("B: J");
+                    ui.text("A: K");
+                    ui.separator();
+                    ui.text("Debug");
+                    ui.text("Pause: P");
+                    ui.text("Step: N");
+                    ui.text("Continue: C");
+                    ui.separator();
+                    ui.text("Misc");
+                    ui.text("Quit: Esc");
+
+                    key_binds_popup.end();
                 }
             }
 
