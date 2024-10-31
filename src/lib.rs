@@ -326,8 +326,8 @@ impl Emulator {
                 ui.text(format!("H: {}", self.cpu.registers.f.h()));
                 ui.text(format!("C: {}", self.cpu.registers.f.c()));
                 ui.separator();
+                ui.text(format!("IME: {}", self.cpu.ime));
                 ui.text(format!("Halted: {}", self.cpu.halted));
-                ui.text(format!("Interruptable: {}", self.cpu.interruptable));
                 ui.text(format!("Instruction Set: {}", self.cpu.instruction_set));
             }
 

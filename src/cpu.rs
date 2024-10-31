@@ -1328,8 +1328,8 @@ pub struct Cpu {
     pub history: BoundedVecDeque<Instruction>,
     /// Flag indicating whether the cpu is in HALT mode.
     pub halted: bool,
-    /// Flag indicating whether interrupts are currently enabled.
-    pub interruptable: bool,
+    /// Interrupt master enabled flag indicating whether interrupts are currently enabled.
+    pub ime: bool,
 }
 
 /// Default value for the maximum number of instructions stored in the instruction execution
@@ -1355,7 +1355,7 @@ impl Cpu {
             instruction_set: InstructionSet::default(),
             history: BoundedVecDeque::with_capacity(max, max),
             halted: false,
-            interruptable: true,
+            ime: false,
         }
     }
     /// Reads and executes the next instruction based on the current program counter. Returns the
@@ -1369,6 +1369,14 @@ impl Cpu {
         };
 
         if let Some(instruction) = instruction {
+            // enabling ime with the EI instruction is delayed by one step so check previous
+            // instruction and enable if required
+            if let Some(prev_instruction) = self.history.get(0) {
+                if prev_instruction.operation == Operation::EI {
+                    self.ime = true;
+                }
+            }
+
             self.registers.pc = self.registers.pc.wrapping_add(instruction.num_bytes);
 
             self.execute(&instruction, memory);
@@ -2509,8 +2517,8 @@ impl Cpu {
                 self.registers.f.set_n(true);
                 self.registers.f.set_h(will_half_carry_sub_u8(value, 1))
             }
-            Operation::DI => tracing::warn!("TODO: implement DI"),
-            Operation::EI => tracing::warn!("TODO: implement EI"),
+            Operation::DI => self.ime = false,
+            Operation::EI => { /* enabling of ime for EI is delayed one instruction */ }
             Operation::HALT => self.halted = true,
             // TODO: cleanup
             Operation::INC { target } => match target {
@@ -2878,7 +2886,7 @@ impl Cpu {
 
                 self.registers.pc = (high << 8) | low;
 
-                self.interruptable = true;
+                self.ime = true;
             }
             Operation::RL { target } => {
                 let value = match target {
@@ -3549,6 +3557,7 @@ mod json_tests {
         f: u8,
         h: u8,
         l: u8,
+        ime: u8,
         ram: Vec<Vec<u16>>, // TODO: can probably make this better
     }
 
@@ -3610,6 +3619,7 @@ mod json_tests {
         cpu.registers.f = test.input.f.into();
         cpu.registers.h = test.input.h;
         cpu.registers.l = test.input.l;
+        cpu.ime = if test.input.ime == 0 { false } else { true };
 
         for byte in test.input.ram {
             if byte.len() != 2 {
@@ -3642,6 +3652,9 @@ mod json_tests {
         assert_eq!(test.output.f, f_value);
         assert_eq!(test.output.h, cpu.registers.h);
         assert_eq!(test.output.l, cpu.registers.l);
+
+        let ime = if cpu.ime { 1 } else { 0 };
+        assert_eq!(test.output.ime, ime);
 
         for byte in test.output.ram {
             if byte.len() != 2 {
