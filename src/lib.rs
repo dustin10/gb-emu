@@ -6,7 +6,7 @@ pub mod mem;
 use crate::{
     cart::Cartridge,
     cpu::Cpu,
-    input::{Button, Input},
+    input::{Button, Input, Joypad},
     mem::Mmu,
 };
 
@@ -16,7 +16,6 @@ use imgui_glow_renderer::{
     AutoRenderer,
 };
 use imgui_sdl2_support::SdlPlatform;
-use input::Controller;
 use sdl2::{event::Event, keyboard::Keycode, video::Window};
 use std::{cell::RefCell, rc::Rc};
 
@@ -54,7 +53,7 @@ impl Emulator {
     /// Creates a new [`Emulator`] which is capable of playing the specified [`Cartridge`].
     pub fn new(cartridge: Cartridge, debug_mode: DebugMode) -> Self {
         let cpu = Cpu::new();
-        let input: Rc<RefCell<dyn Input>> = Rc::new(RefCell::new(Controller::new()));
+        let input: Rc<RefCell<dyn Input>> = Rc::new(RefCell::new(Joypad::new()));
         let mmu = Mmu::new(Rc::clone(&cartridge.mbc), Rc::clone(&input));
 
         Self {

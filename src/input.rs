@@ -30,7 +30,7 @@ const DIRECTIONS_BIT_POSITION: u8 = 4;
 /// Bit position of the enable buttons reading flag.
 const BUTTONS_BIT_POSITION: u8 = 5;
 
-/// Enumerates the buttons available on the GameBoy controller.
+/// Enumerates the buttons available for input to the GameBoy.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Button {
     Up,
@@ -80,17 +80,17 @@ pub trait Input {
     fn write(&mut self, byte: u8);
 }
 
-/// Implementation of [`Input`] that represents the GameBoy controller.
+/// Implementation of [`Input`] that represents the GameBoy joypad controller.
 #[derive(Debug)]
-pub struct Controller {
+pub struct Joypad {
     /// Current state of the buttons based on user input.
     state: HashMap<Button, bool>,
     /// Current read mode. Used to construct the byte that represents the input state.
     mode: ReadMode,
 }
 
-impl Default for Controller {
-    /// Creates a default [`Controller`].
+impl Default for Joypad {
+    /// Creates a default [`Joypad`].
     fn default() -> Self {
         let state = HashMap::from([
             (Button::Up, false),
@@ -110,14 +110,74 @@ impl Default for Controller {
     }
 }
 
-impl Controller {
-    /// Creates a new default [`Input`].
+impl Joypad {
+    /// Creates a new default [`Joypad`].
     pub fn new() -> Self {
         Self::default()
     }
+    /// Returns the byte that represents the current state of the buttons.
+    fn directions_state(&self) -> u8 {
+        let mut s: u8 = 0b00101111;
+
+        if *self.state.get(&Button::Up).expect("key exists") {
+            s |= 1 << UP_BIT_POSITION;
+        } else {
+            s &= !(1 << UP_BIT_POSITION);
+        }
+
+        if *self.state.get(&Button::Down).expect("key exists") {
+            s |= 1 << DOWN_BIT_POSITION;
+        } else {
+            s &= !(1 << DOWN_BIT_POSITION);
+        }
+
+        if *self.state.get(&Button::Left).expect("key exists") {
+            s |= 1 << LEFT_BIT_POSITION;
+        } else {
+            s &= !(1 << LEFT_BIT_POSITION);
+        }
+
+        if *self.state.get(&Button::Right).expect("key exists") {
+            s |= 1 << RIGHT_BIT_POSITION;
+        } else {
+            s &= !(1 << RIGHT_BIT_POSITION);
+        }
+
+        s
+    }
+    /// Returns the byte that represents the current state of the directions.
+    fn buttons_state(&self) -> u8 {
+        let mut s: u8 = 0b00011111;
+
+        if *self.state.get(&Button::Start).expect("key exists") {
+            s |= 1 << START_BIT_POSITION;
+        } else {
+            s &= !(1 << START_BIT_POSITION);
+        }
+
+        if *self.state.get(&Button::Select).expect("key exists") {
+            s |= 1 << SELECT_BIT_POSITION;
+        } else {
+            s &= !(1 << SELECT_BIT_POSITION);
+        }
+
+        if *self.state.get(&Button::A).expect("key exists") {
+            s |= 1 << A_BIT_POSITION;
+        } else {
+            s &= !(1 << A_BIT_POSITION);
+        }
+
+        if *self.state.get(&Button::B).expect("key exists") {
+            s |= 1 << B_BIT_POSITION;
+        } else {
+            s &= !(1 << B_BIT_POSITION);
+        }
+
+        s
+    }
 }
 
-impl Input for Controller {
+impl Input for Joypad {
     /// Marks the specified [`Button`] as being pressed.
     fn button_down(&mut self, button: Button) {
         tracing::debug!("button down: {}", button);
@@ -159,64 +219,8 @@ impl Input for Controller {
     fn read(&self) -> u8 {
         match self.mode {
             ReadMode::Neither | ReadMode::Both => 0x0F,
-            ReadMode::Buttons => {
-                let mut s: u8 = 0b00011111;
-
-                if *self.state.get(&Button::Start).expect("key exists") {
-                    s |= 1 << START_BIT_POSITION;
-                } else {
-                    s &= !(1 << START_BIT_POSITION);
-                }
-
-                if *self.state.get(&Button::Select).expect("key exists") {
-                    s |= 1 << SELECT_BIT_POSITION;
-                } else {
-                    s &= !(1 << SELECT_BIT_POSITION);
-                }
-
-                if *self.state.get(&Button::A).expect("key exists") {
-                    s |= 1 << A_BIT_POSITION;
-                } else {
-                    s &= !(1 << A_BIT_POSITION);
-                }
-
-                if *self.state.get(&Button::B).expect("key exists") {
-                    s |= 1 << B_BIT_POSITION;
-                } else {
-                    s &= !(1 << B_BIT_POSITION);
-                }
-
-                s
-            }
-            ReadMode::Directions => {
-                let mut s: u8 = 0b00101111;
-
-                if *self.state.get(&Button::Up).expect("key exists") {
-                    s |= 1 << UP_BIT_POSITION;
-                } else {
-                    s &= !(1 << UP_BIT_POSITION);
-                }
-
-                if *self.state.get(&Button::Down).expect("key exists") {
-                    s |= 1 << DOWN_BIT_POSITION;
-                } else {
-                    s &= !(1 << DOWN_BIT_POSITION);
-                }
-
-                if *self.state.get(&Button::Left).expect("key exists") {
-                    s |= 1 << LEFT_BIT_POSITION;
-                } else {
-                    s &= !(1 << LEFT_BIT_POSITION);
-                }
-
-                if *self.state.get(&Button::Right).expect("key exists") {
-                    s |= 1 << RIGHT_BIT_POSITION;
-                } else {
-                    s &= !(1 << RIGHT_BIT_POSITION);
-                }
-
-                s
-            }
+            ReadMode::Buttons => self.buttons_state(),
+            ReadMode::Directions => self.directions_state(),
         }
     }
 }
@@ -226,7 +230,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_controller_button_down() {
+    fn test_joypad_button_down() {
         let buttons = vec![
             Button::Up,
             Button::Down,
@@ -238,16 +242,16 @@ mod tests {
             Button::Select,
         ];
 
-        let mut controller = Controller::new();
+        let mut joypad = Joypad::new();
 
         buttons.into_iter().for_each(|b| {
-            controller.button_down(b);
-            assert!(*controller.state.get(&b).expect("key exists"));
+            joypad.button_down(b);
+            assert!(*joypad.state.get(&b).expect("key exists"));
         })
     }
 
     #[test]
-    fn test_controller_button_up() {
+    fn test_joypad_button_up() {
         let buttons = vec![
             Button::Up,
             Button::Down,
@@ -259,108 +263,108 @@ mod tests {
             Button::Select,
         ];
 
-        let mut controller = Controller::new();
+        let mut joypad = Joypad::new();
 
         buttons.into_iter().for_each(|b| {
-            let value = controller.state.get_mut(&b).expect("key exists");
+            let value = joypad.state.get_mut(&b).expect("key exists");
             *value = true;
 
-            controller.button_up(b);
-            assert!(!*controller.state.get(&b).expect("key exists"));
+            joypad.button_up(b);
+            assert!(!*joypad.state.get(&b).expect("key exists"));
         })
     }
 
     #[test]
-    fn test_controller_handles_read() {
+    fn test_joypad_handles_read() {
         {
-            let controller = Controller::new();
-            assert!(controller.handles_read(0xFF00));
+            let joypad = Joypad::new();
+            assert!(joypad.handles_read(0xFF00));
         }
         {
-            let controller = Controller::new();
-            assert!(!controller.handles_read(0xA000));
-        }
-    }
-
-    #[test]
-    fn test_controller_read_neither() {
-        let mut controller = Controller::new();
-        controller.write(0x30);
-        assert_eq!(0x0F, controller.read());
-    }
-
-    #[test]
-    fn test_controller_read_both() {
-        let mut controller = Controller::new();
-        controller.write(0xF0);
-        assert_eq!(0x0F, controller.read());
-    }
-
-    #[test]
-    fn test_controller_read_directions() {
-        {
-            let mut controller = Controller::new();
-            controller.write(1 << BUTTONS_BIT_POSITION);
-            controller.button_down(Button::Right);
-            assert_eq!(0b00100001, controller.read());
-        }
-        {
-            let mut controller = Controller::new();
-            controller.write(1 << BUTTONS_BIT_POSITION);
-            controller.button_down(Button::Left);
-            assert_eq!(0b00100010, controller.read());
-        }
-        {
-            let mut controller = Controller::new();
-            controller.write(1 << BUTTONS_BIT_POSITION);
-            controller.button_down(Button::Up);
-            assert_eq!(0b00100100, controller.read());
-        }
-        {
-            let mut controller = Controller::new();
-            controller.write(1 << BUTTONS_BIT_POSITION);
-            controller.button_down(Button::Down);
-            assert_eq!(0b00101000, controller.read());
+            let joypad = Joypad::new();
+            assert!(!joypad.handles_read(0xA000));
         }
     }
 
     #[test]
-    fn test_controller_read_buttons() {
+    fn test_joypad_read_neither() {
+        let mut joypad = Joypad::new();
+        joypad.write(0x30);
+        assert_eq!(0x0F, joypad.read());
+    }
+
+    #[test]
+    fn test_joypad_read_both() {
+        let mut joypad = Joypad::new();
+        joypad.write(0xF0);
+        assert_eq!(0x0F, joypad.read());
+    }
+
+    #[test]
+    fn test_joypad_read_directions() {
         {
-            let mut controller = Controller::new();
-            controller.write(1 << DIRECTIONS_BIT_POSITION);
-            controller.button_down(Button::A);
-            assert_eq!(0b00010001, controller.read());
+            let mut joypad = Joypad::new();
+            joypad.write(1 << BUTTONS_BIT_POSITION);
+            joypad.button_down(Button::Right);
+            assert_eq!(0b00100001, joypad.read());
         }
         {
-            let mut controller = Controller::new();
-            controller.write(1 << DIRECTIONS_BIT_POSITION);
-            controller.button_down(Button::B);
-            assert_eq!(0b00010010, controller.read());
+            let mut joypad = Joypad::new();
+            joypad.write(1 << BUTTONS_BIT_POSITION);
+            joypad.button_down(Button::Left);
+            assert_eq!(0b00100010, joypad.read());
         }
         {
-            let mut controller = Controller::new();
-            controller.write(1 << DIRECTIONS_BIT_POSITION);
-            controller.button_down(Button::Select);
-            assert_eq!(0b00010100, controller.read());
+            let mut joypad = Joypad::new();
+            joypad.write(1 << BUTTONS_BIT_POSITION);
+            joypad.button_down(Button::Up);
+            assert_eq!(0b00100100, joypad.read());
         }
         {
-            let mut controller = Controller::new();
-            controller.write(1 << DIRECTIONS_BIT_POSITION);
-            controller.button_down(Button::Start);
-            assert_eq!(0b00011000, controller.read());
+            let mut joypad = Joypad::new();
+            joypad.write(1 << BUTTONS_BIT_POSITION);
+            joypad.button_down(Button::Down);
+            assert_eq!(0b00101000, joypad.read());
         }
     }
 
     #[test]
-    fn test_controller_handles_write() {
+    fn test_joypad_read_buttons() {
         {
-            let controller = Controller::new();
-            assert!(controller.handles_write(0xFF00));
+            let mut joypad = Joypad::new();
+            joypad.write(1 << DIRECTIONS_BIT_POSITION);
+            joypad.button_down(Button::A);
+            assert_eq!(0b00010001, joypad.read());
         }
         {
-            let controller = Controller::new();
-            assert!(!controller.handles_write(0xA000));
+            let mut joypad = Joypad::new();
+            joypad.write(1 << DIRECTIONS_BIT_POSITION);
+            joypad.button_down(Button::B);
+            assert_eq!(0b00010010, joypad.read());
+        }
+        {
+            let mut joypad = Joypad::new();
+            joypad.write(1 << DIRECTIONS_BIT_POSITION);
+            joypad.button_down(Button::Select);
+            assert_eq!(0b00010100, joypad.read());
+        }
+        {
+            let mut joypad = Joypad::new();
+            joypad.write(1 << DIRECTIONS_BIT_POSITION);
+            joypad.button_down(Button::Start);
+            assert_eq!(0b00011000, joypad.read());
+        }
+    }
+
+    #[test]
+    fn test_joypad_handles_write() {
+        {
+            let joypad = Joypad::new();
+            assert!(joypad.handles_write(0xFF00));
+        }
+        {
+            let joypad = Joypad::new();
+            assert!(!joypad.handles_write(0xA000));
         }
     }
 }
