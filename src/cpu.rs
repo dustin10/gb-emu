@@ -1334,7 +1334,7 @@ pub struct Cpu {
 
 /// Default value for the maximum number of instructions stored in the instruction execution
 /// history of the [`Cpu`].
-const DEFAULT_CPU_MAX_HISTORY: usize = 250;
+const DEFAULT_CPU_MAX_HISTORY: usize = 50;
 
 impl Default for Cpu {
     /// Creates a default [`Cpu`] with max history size of 250.
