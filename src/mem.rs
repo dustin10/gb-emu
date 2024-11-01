@@ -2,69 +2,75 @@ use crate::{cart::Mbc, input::Input};
 
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
-/// Bit position of the VBlank interrupt enabled flag.
-const IE_VBLANK_BIT_POSITION: u8 = 0;
+/// Bit position of the VBlank interrupt flag.
+const IF_VBLANK_BIT_POSITION: u8 = 0;
 
-/// Bit position of the LCD interrupt enabled flag.
-const IE_LCD_BIT_POSITION: u8 = 1;
+/// Bit position of the LCD interrupt flag.
+const IF_LCD_BIT_POSITION: u8 = 1;
 
-/// Bit position of the Timer interrupt enabled flag.
-const IE_TIMER_BIT_POSITION: u8 = 2;
+/// Bit position of the Timer interrupt flag.
+const IF_TIMER_BIT_POSITION: u8 = 2;
 
-/// Bit position of the Serial interrupt enabled flag.
-const IE_SERIAL_BIT_POSITION: u8 = 3;
+/// Bit position of the Serial interrupt flag.
+const IF_SERIAL_BIT_POSITION: u8 = 3;
 
-/// Bit position of the Joypad interrupt enabled flag.
-const IE_JOYPAD_BIT_POSITION: u8 = 4;
+/// Bit position of the Joypad interrupt flag.
+const IF_JOYPAD_BIT_POSITION: u8 = 4;
 
-/// New type wrapping a [`u8`] that represents the interrupt enabled state of the various
+/// New type wrapping a [`u8`] that represents the interrupt flag state of the various
 /// subsystems.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub struct InterruptEnabled(u8);
+pub struct InterruptFlag(u8);
 
-impl InterruptEnabled {
+impl InterruptFlag {
     /// Returns `true` if the Joypad interrupt flag is enabled.
     pub fn joypad(&self) -> bool {
-        self.0 & (1 << IE_JOYPAD_BIT_POSITION) != 0
+        self.0 & (1 << IF_JOYPAD_BIT_POSITION) != 0
     }
     /// Returns `true` if the Serial interrupt flag is enabled.
     pub fn serial(&self) -> bool {
-        self.0 & (1 << IE_SERIAL_BIT_POSITION) != 0
+        self.0 & (1 << IF_SERIAL_BIT_POSITION) != 0
     }
     /// Returns `true` if the Timer interrupt flag is enabled.
     pub fn timer(&self) -> bool {
-        self.0 & (1 << IE_TIMER_BIT_POSITION) != 0
+        self.0 & (1 << IF_TIMER_BIT_POSITION) != 0
     }
     /// Returns `true` if the LCD interrupt flag is enabled.
     pub fn lcd(&self) -> bool {
-        self.0 & (1 << IE_LCD_BIT_POSITION) != 0
+        self.0 & (1 << IF_LCD_BIT_POSITION) != 0
     }
     /// Returns `true` if the VBlank interrupt flag is enabled.
     pub fn v_blank(&self) -> bool {
-        self.0 & (1 << IE_VBLANK_BIT_POSITION) != 0
+        self.0 & (1 << IF_VBLANK_BIT_POSITION) != 0
     }
 }
 
-impl From<u8> for InterruptEnabled {
-    /// Converts the given [`u8`] into a [`InterruptEnabled`].
+impl From<u8> for InterruptFlag {
+    /// Converts the given [`u8`] into a [`InterruptFlag`].
     fn from(value: u8) -> Self {
         Self(value)
     }
 }
 
-impl From<InterruptEnabled> for u8 {
-    /// Converts the given [`InterruptEnabled`] into a [`u8`].
-    fn from(value: InterruptEnabled) -> Self {
+impl From<InterruptFlag> for u8 {
+    /// Converts the given [`InterruptFlag`] into a [`u8`].
+    fn from(value: InterruptFlag) -> Self {
         value.0
     }
 }
 
-impl Display for InterruptEnabled {
-    /// Writes a string representation of the [`InterruptEnabled`] to the formatter.
+impl Display for InterruptFlag {
+    /// Writes a string representation of the [`InterruptFlag`] to the formatter.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
+
+/// Memory address of the Interrupt Enable (IE) flag.
+const IE_ADDRESS: u16 = 0xFFFF;
+
+/// Memory address of the Interrupt flag (IF).
+const IF_ADDRESS: u16 = 0xFF0F;
 
 /// The memory map unit which is responsible for reading and writing the various types of memory
 /// available on the GameBoy.
@@ -74,7 +80,9 @@ pub struct Mmu {
     /// [`Input`] that contains state of the GameBoy controller.
     pub input: Rc<RefCell<dyn Input>>,
     /// Flag that determines if interrupts are enabled for various subsystems.
-    pub ie: InterruptEnabled,
+    pub interrupt_enabled: InterruptFlag,
+    /// Flag that determines if interrupt handlers are requested for various subsystems.
+    pub interrupt_flag: InterruptFlag,
 }
 
 impl Mmu {
@@ -83,7 +91,8 @@ impl Mmu {
         Self {
             mbc,
             input,
-            ie: InterruptEnabled::default(),
+            interrupt_enabled: InterruptFlag::default(),
+            interrupt_flag: InterruptFlag::default(),
         }
     }
     /// Reads a single byte from memory at the given address.
@@ -92,8 +101,10 @@ impl Mmu {
             self.mbc.borrow().read(address)
         } else if self.input.borrow().handles_read(address) {
             self.input.borrow().read()
-        } else if address == 0xFF0F {
-            self.ie.into()
+        } else if address == IE_ADDRESS {
+            self.interrupt_enabled.into()
+        } else if address == IF_ADDRESS {
+            self.interrupt_flag.into()
         } else {
             tracing::warn!("read from unmapped address: {:4x}", address);
             0
@@ -117,8 +128,10 @@ impl Mmu {
             self.mbc.borrow_mut().write(address, byte);
         } else if self.input.borrow().handles_read(address) {
             self.input.borrow_mut().write(byte);
-        } else if address == 0xFF0F {
-            self.ie = byte.into();
+        } else if address == IE_ADDRESS {
+            self.interrupt_enabled = byte.into();
+        } else if address == IF_ADDRESS {
+            self.interrupt_flag = byte.into();
         } else {
             tracing::warn!("write to unmapped address: {:4x}", address);
         }
@@ -218,11 +231,11 @@ mod tests {
     #[test]
     fn test_interrupt_enabled_joypad() {
         {
-            let ie = InterruptEnabled(1 << IE_JOYPAD_BIT_POSITION);
+            let ie = InterruptFlag(1 << IF_JOYPAD_BIT_POSITION);
             assert!(ie.joypad());
         }
         {
-            let ie = InterruptEnabled(0);
+            let ie = InterruptFlag(0);
             assert!(!ie.joypad());
         }
     }
@@ -230,11 +243,11 @@ mod tests {
     #[test]
     fn test_interrupt_enabled_serial() {
         {
-            let ie = InterruptEnabled(1 << IE_SERIAL_BIT_POSITION);
+            let ie = InterruptFlag(1 << IF_SERIAL_BIT_POSITION);
             assert!(ie.serial());
         }
         {
-            let ie = InterruptEnabled(0);
+            let ie = InterruptFlag(0);
             assert!(!ie.serial());
         }
     }
@@ -242,11 +255,11 @@ mod tests {
     #[test]
     fn test_interrupt_enabled_timer() {
         {
-            let ie = InterruptEnabled(1 << IE_TIMER_BIT_POSITION);
+            let ie = InterruptFlag(1 << IF_TIMER_BIT_POSITION);
             assert!(ie.timer());
         }
         {
-            let ie = InterruptEnabled(0);
+            let ie = InterruptFlag(0);
             assert!(!ie.timer());
         }
     }
@@ -254,11 +267,11 @@ mod tests {
     #[test]
     fn test_interrupt_enabled_lcd() {
         {
-            let ie = InterruptEnabled(1 << IE_LCD_BIT_POSITION);
+            let ie = InterruptFlag(1 << IF_LCD_BIT_POSITION);
             assert!(ie.lcd());
         }
         {
-            let ie = InterruptEnabled(0);
+            let ie = InterruptFlag(0);
             assert!(!ie.lcd());
         }
     }
@@ -266,11 +279,11 @@ mod tests {
     #[test]
     fn test_interrupt_enabled_vblank() {
         {
-            let ie = InterruptEnabled(1 << IE_VBLANK_BIT_POSITION);
+            let ie = InterruptFlag(1 << IF_VBLANK_BIT_POSITION);
             assert!(ie.v_blank());
         }
         {
-            let ie = InterruptEnabled(0);
+            let ie = InterruptFlag(0);
             assert!(!ie.v_blank());
         }
     }

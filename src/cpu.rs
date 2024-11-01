@@ -3658,7 +3658,7 @@ mod json_tests {
         }
 
         let mut mmu = Mmu::new(mbc, input);
-        mmu.ie = test.input.ie.unwrap_or(0).into();
+        mmu.interrupt_enabled = test.input.ie.unwrap_or(0).into();
 
         for byte in test.input.ram {
             if byte.len() != 2 {
@@ -3690,7 +3690,7 @@ mod json_tests {
         assert_eq!(test.output.ime, ime);
 
         if let Some(ie) = test.output.ie {
-            let mmu_ie: u8 = mmu.ie.into();
+            let mmu_ie: u8 = mmu.interrupt_enabled.into();
             assert_eq!(ie, mmu_ie);
         }
 

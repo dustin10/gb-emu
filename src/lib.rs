@@ -314,11 +314,11 @@ impl Emulator {
                 ui.text(format!("C: {}", self.cpu.registers.f.c()));
                 ui.separator();
                 ui.text(format!("IME: {}", self.cpu.ime));
-                ui.text(format!("Joypad: {}", self.mmu.ie.joypad()));
-                ui.text(format!("Serial: {}", self.mmu.ie.serial()));
-                ui.text(format!("Timer: {}", self.mmu.ie.timer()));
-                ui.text(format!("LCD: {}", self.mmu.ie.lcd()));
-                ui.text(format!("VBlank: {}", self.mmu.ie.v_blank()));
+                ui.text(format!("Joypad: {}", self.mmu.interrupt_enabled.joypad()));
+                ui.text(format!("Serial: {}", self.mmu.interrupt_enabled.serial()));
+                ui.text(format!("Timer: {}", self.mmu.interrupt_enabled.timer()));
+                ui.text(format!("LCD: {}", self.mmu.interrupt_enabled.lcd()));
+                ui.text(format!("VBlank: {}", self.mmu.interrupt_enabled.v_blank()));
                 ui.separator();
                 ui.text(format!("Halted: {}", self.cpu.halted));
                 ui.text(format!("Instruction Set: {}", self.cpu.instruction_set));
