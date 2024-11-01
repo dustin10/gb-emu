@@ -1371,7 +1371,7 @@ impl Cpu {
         if let Some(instruction) = instruction {
             // enabling ime with the EI instruction is delayed by one step so check previous
             // instruction and enable if required
-            if let Some(prev_instruction) = self.history.get(0) {
+            if let Some(prev_instruction) = self.history.front() {
                 if prev_instruction.operation == Operation::EI {
                     self.ime = true;
                 }
@@ -3520,7 +3520,10 @@ mod tests {
 
 #[cfg(test)]
 mod json_tests {
-    use crate::{cart::RomOnly, input::Input};
+    use crate::{
+        cart::{Mbc, RomOnly},
+        input::Input,
+    };
 
     use super::*;
 
@@ -3528,6 +3531,33 @@ mod json_tests {
     use std::{cell::RefCell, path::Path, rc::Rc};
 
     struct TestInput;
+
+    struct TestMbc {
+        inner: RomOnly,
+    }
+
+    impl TestMbc {
+        fn new() -> Self {
+            Self {
+                inner: RomOnly::new(),
+            }
+        }
+    }
+
+    impl Mbc for TestMbc {
+        fn handles_address(&self, _address: u16) -> bool {
+            true
+        }
+        fn read(&self, address: u16) -> u8 {
+            self.inner.read(address)
+        }
+        fn write(&mut self, address: u16, byte: u8) {
+            self.inner.write(address, byte);
+        }
+        fn write_block(&mut self, start_addr: u16, bytes: &[u8]) {
+            self.inner.write_block(start_addr, bytes);
+        }
+    }
 
     impl Input for TestInput {
         fn button_down(&mut self, _button: crate::input::Button) {}
@@ -3558,6 +3588,7 @@ mod json_tests {
         h: u8,
         l: u8,
         ime: u8,
+        ie: Option<u8>,
         ram: Vec<Vec<u16>>, // TODO: can probably make this better
     }
 
@@ -3603,9 +3634,8 @@ mod json_tests {
     fn execute(test: Test, instruction_set: InstructionSet) {
         println!("execute json test {}", test.name);
 
-        let mbc = Rc::new(RefCell::new(RomOnly::new()));
+        let mbc = Rc::new(RefCell::new(TestMbc::new()));
         let input = Rc::new(RefCell::new(TestInput));
-        let mut mmu = Mmu::new(mbc, input);
 
         let mut cpu = Cpu::new();
         cpu.instruction_set = instruction_set;
@@ -3619,7 +3649,16 @@ mod json_tests {
         cpu.registers.f = test.input.f.into();
         cpu.registers.h = test.input.h;
         cpu.registers.l = test.input.l;
-        cpu.ime = if test.input.ime == 0 { false } else { true };
+        cpu.ime = test.input.ime != 0;
+
+        // mimic that we read the 0xCB byte and incremented pc if we are executing a JSON test for
+        // a prefixed instruction.
+        if cpu.instruction_set == InstructionSet::Prefixed {
+            cpu.registers.pc = cpu.registers.pc.wrapping_add(1);
+        }
+
+        let mut mmu = Mmu::new(mbc, input);
+        mmu.ie = test.input.ie.unwrap_or(0).into();
 
         for byte in test.input.ram {
             if byte.len() != 2 {
@@ -3630,12 +3669,6 @@ mod json_tests {
             let value = byte[1] as u8;
 
             mmu.write_u8(address, value);
-        }
-
-        // mimic that we read the 0xCB byte and incremented pc if we are executing a JSON test for
-        // a prefixed instruction.
-        if cpu.instruction_set == InstructionSet::Prefixed {
-            cpu.registers.pc = cpu.registers.pc.wrapping_add(1);
         }
 
         cpu.step(&mut mmu);
@@ -3655,6 +3688,11 @@ mod json_tests {
 
         let ime = if cpu.ime { 1 } else { 0 };
         assert_eq!(test.output.ime, ime);
+
+        if let Some(ie) = test.output.ie {
+            let mmu_ie: u8 = mmu.ie.into();
+            assert_eq!(ie, mmu_ie);
+        }
 
         for byte in test.output.ram {
             if byte.len() != 2 {

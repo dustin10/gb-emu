@@ -53,7 +53,9 @@ impl Emulator {
     /// Creates a new [`Emulator`] which is capable of playing the specified [`Cartridge`].
     pub fn new(cartridge: Cartridge, debug_mode: DebugMode) -> Self {
         let cpu = Cpu::new();
+
         let input: Rc<RefCell<dyn Input>> = Rc::new(RefCell::new(Joypad::new()));
+
         let mmu = Mmu::new(Rc::clone(&cartridge.mbc), Rc::clone(&input));
 
         Self {
@@ -231,15 +233,15 @@ impl Emulator {
                     Event::KeyUp {
                         keycode: Some(Keycode::P),
                         ..
-                    } => self.debug_pause(),
+                    } => self.debug_mode = DebugMode::Pause,
                     Event::KeyUp {
                         keycode: Some(Keycode::N),
                         ..
-                    } => self.debug_step(),
+                    } => self.debug_mode = DebugMode::Step,
                     Event::KeyUp {
                         keycode: Some(Keycode::C),
                         ..
-                    } => self.debug_continue(),
+                    } => self.debug_mode = DebugMode::Disabled,
 
                     // not mapped
                     _ => {}
@@ -263,21 +265,6 @@ impl Emulator {
         tracing::debug!("exited main loop");
 
         Ok(())
-    }
-    /// Pauses the emulator instruction processing.
-    fn debug_pause(&mut self) {
-        tracing::debug!("instruction execution paused");
-        self.debug_mode = DebugMode::Pause;
-    }
-    /// Steps the emulator forward one instruction.
-    fn debug_step(&mut self) {
-        tracing::debug!("stepping forward one instruction");
-        self.debug_mode = DebugMode::Step;
-    }
-    /// Resumes normal emulator execution.
-    fn debug_continue(&mut self) {
-        tracing::debug!("resuming normal instruction execution");
-        self.debug_mode = DebugMode::Disabled;
     }
     /// Draws the ImGUI UI for the frame based on the state of the emulator.
     fn render_imgui(&mut self, ui: &mut Ui) {
@@ -327,6 +314,12 @@ impl Emulator {
                 ui.text(format!("C: {}", self.cpu.registers.f.c()));
                 ui.separator();
                 ui.text(format!("IME: {}", self.cpu.ime));
+                ui.text(format!("Joypad: {}", self.mmu.ie.joypad()));
+                ui.text(format!("Serial: {}", self.mmu.ie.serial()));
+                ui.text(format!("Timer: {}", self.mmu.ie.timer()));
+                ui.text(format!("LCD: {}", self.mmu.ie.lcd()));
+                ui.text(format!("VBlank: {}", self.mmu.ie.v_blank()));
+                ui.separator();
                 ui.text(format!("Halted: {}", self.cpu.halted));
                 ui.text(format!("Instruction Set: {}", self.cpu.instruction_set));
             }
@@ -343,15 +336,15 @@ impl Emulator {
         {
             if ui.collapsing_header("Debug", TreeNodeFlags::DEFAULT_OPEN) {
                 if ui.button("Pause") {
-                    self.debug_pause();
+                    self.debug_mode = DebugMode::Pause;
                 }
                 ui.same_line();
                 if ui.button("Step") {
-                    self.debug_step();
+                    self.debug_mode = DebugMode::Step;
                 }
                 ui.same_line();
                 if ui.button("Continue") {
-                    self.debug_continue();
+                    self.debug_mode = DebugMode::Disabled;
                 }
                 ui.same_line();
                 if ui.button("Key Bindings") {
@@ -381,7 +374,7 @@ impl Emulator {
             }
 
             if ui.collapsing_header("Instructions", TreeNodeFlags::DEFAULT_OPEN) {
-                for inst in self.cpu.history.iter().take(40) {
+                for inst in self.cpu.history.iter() {
                     ui.text(format!("{}", inst));
                 }
             }
