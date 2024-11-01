@@ -92,7 +92,7 @@ impl Emulator {
         );
 
         let window = match video_subsystem
-            .window(&window_title, 1280, 720)
+            .window(&window_title, 1280, 576)
             .allow_highdpi()
             .opengl()
             .position_centered()
@@ -102,18 +102,16 @@ impl Emulator {
             Ok(window) => window,
         };
 
-        let gl_context = window
-            .gl_create_context()
-            .expect("OpenGL context can be created");
+        let gl_context = window.gl_create_context().expect("opengl context created");
 
         window
             .gl_make_current(&gl_context)
-            .expect("OpenGL context can be activated");
+            .expect("opengl context activated");
 
         window
             .subsystem()
             .gl_set_swap_interval(1)
-            .expect("OpenGL swap interval can be set");
+            .expect("opengl swap interval set");
 
         let gl = glow_context(&window);
 
@@ -127,7 +125,60 @@ impl Emulator {
             .add_font(&[imgui::FontSource::DefaultFontData { config: None }]);
 
         let mut platform = SdlPlatform::new(&mut imgui);
-        let mut renderer = AutoRenderer::new(gl, &mut imgui).expect("Renderer can be created");
+        let mut renderer = AutoRenderer::new(gl, &mut imgui).expect("renderer created");
+        let gl = renderer.gl_context();
+
+        let vertex_array = unsafe {
+            let vertex_array = gl
+                .create_vertex_array()
+                .expect("Cannot create vertex array");
+
+            gl.bind_vertex_array(Some(vertex_array));
+
+            vertex_array
+        };
+
+        let program = unsafe { gl.create_program().expect("program created") };
+
+        let shaders = Vec::from([
+            (glow::VERTEX_SHADER, VERTEX_SHADER_SOURCE),
+            (glow::FRAGMENT_SHADER, FRAGMENT_SHADER_SOURCE),
+        ]);
+
+        let mut compiled_shaders = Vec::with_capacity(shaders.len());
+
+        for (shader_type, shader_src) in shaders.iter() {
+            let shader = unsafe {
+                let shader = gl.create_shader(*shader_type).expect("shader created");
+
+                gl.shader_source(shader, shader_src);
+                gl.compile_shader(shader);
+
+                if !gl.get_shader_compile_status(shader) {
+                    anyhow::bail!("compile shader: {}", gl.get_shader_info_log(shader));
+                }
+
+                gl.attach_shader(program, shader);
+
+                shader
+            };
+
+            compiled_shaders.push(shader);
+        }
+
+        unsafe {
+            gl.link_program(program);
+            if !gl.get_program_link_status(program) {
+                anyhow::bail!("link program: {}", gl.get_program_info_log(program));
+            }
+
+            for shader in compiled_shaders {
+                gl.detach_shader(program, shader);
+                gl.delete_shader(shader);
+            }
+
+            gl.use_program(Some(program));
+        }
 
         let mut event_pump = match sdl_context.event_pump() {
             Err(msg) => anyhow::bail!(msg),
@@ -250,19 +301,26 @@ impl Emulator {
 
             platform.prepare_frame(&mut imgui, &window, &event_pump);
 
-            let ui = imgui.new_frame();
-
-            self.render_imgui(ui);
+            self.render_imgui(imgui.new_frame());
 
             let draw_data = imgui.render();
 
             unsafe { renderer.gl_context().clear(glow::COLOR_BUFFER_BIT) };
-            renderer.render(draw_data).expect("scene can be drawn");
+            renderer.render(draw_data).expect("imgui ui rendered");
+
+            unsafe { renderer.gl_context().draw_arrays(glow::TRIANGLES, 0, 6) };
 
             window.gl_swap_window();
         }
 
-        tracing::debug!("exited main loop");
+        tracing::debug!("destroying opengl resources");
+
+        unsafe {
+            renderer.gl_context().delete_program(program);
+            renderer.gl_context().delete_vertex_array(vertex_array);
+        };
+
+        tracing::debug!("exiting emulator");
 
         Ok(())
     }
@@ -271,7 +329,7 @@ impl Emulator {
         if let Some(left_panel_win_token) = ui
             .window("Left Panel")
             .no_decoration()
-            .size([320.0, 720.0], imgui::Condition::FirstUseEver)
+            .size([320.0, 576.0], imgui::Condition::FirstUseEver)
             .position([0.0, 0.0], imgui::Condition::FirstUseEver)
             .begin()
         {
@@ -406,8 +464,8 @@ impl Emulator {
         if let Some(right_panel_win_token) = ui
             .window("Right Panel")
             .no_decoration()
-            .size([320.0, 720.0], imgui::Condition::FirstUseEver)
-            .position([980.0, 0.0], imgui::Condition::FirstUseEver)
+            .size([320.0, 576.0], imgui::Condition::FirstUseEver)
+            .position([960.0, 0.0], imgui::Condition::FirstUseEver)
             .begin()
         {
             if imgui::CollapsingHeader::new("Debug").build(ui) {
@@ -459,6 +517,40 @@ impl Emulator {
         }
     }
 }
+
+const VERTEX_SHADER_SOURCE: &str = r#"
+#version 330
+
+const vec2 verts[6] = vec2[6](
+    vec2(-0.5f, -1.0f),
+    vec2(-0.5f, 1.0f),
+    vec2(0.5f, 1.0f),
+
+    vec2(0.5f, 1.0f),
+    vec2(0.5f, -1.0f),
+    vec2(-0.5f, -1.0f)
+);
+
+out vec2 vert;
+
+void main() {
+    vert = verts[gl_VertexID];
+    gl_Position = vec4(vert, 0.0, 1.0);
+}
+"#;
+
+const FRAGMENT_SHADER_SOURCE: &str = r#"
+#version 330
+
+precision mediump float;
+
+in vec2 vert;
+out vec4 color;
+
+void main() {
+    color = vec4(vert, 0.5, 1.0);
+}
+"#;
 
 fn glow_context(window: &Window) -> glow::Context {
     unsafe {
