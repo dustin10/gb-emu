@@ -296,32 +296,108 @@ impl Emulator {
             }
 
             if ui.collapsing_header("CPU", TreeNodeFlags::DEFAULT_OPEN) {
-                ui.text(format!("PC: {}", self.cpu.registers.pc));
-                ui.text(format!("SP: {}", self.cpu.registers.sp));
+                if let Some(pc_sp_table) = ui.begin_table("pc_sp_table", 2) {
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text(format!("PC: {}", self.cpu.registers.pc));
+                    ui.table_next_column();
+                    ui.text(format!("SP: {}", self.cpu.registers.sp));
+
+                    pc_sp_table.end();
+                }
+
                 ui.separator();
-                ui.text(format!("A: {}", self.cpu.registers.a));
-                ui.text(format!("B: {}", self.cpu.registers.b));
-                ui.text(format!("C: {}", self.cpu.registers.c));
-                ui.text(format!("D: {}", self.cpu.registers.d));
-                ui.text(format!("E: {}", self.cpu.registers.e));
-                ui.text(format!("F: {}", self.cpu.registers.f));
-                ui.text(format!("H: {}", self.cpu.registers.h));
-                ui.text(format!("L: {}", self.cpu.registers.l));
+
+                if let Some(registers_table) = ui.begin_table("registers_table", 4) {
+                    ui.table_next_row();
+
+                    ui.table_next_column();
+                    ui.text(format!("A: {}", self.cpu.registers.a));
+                    ui.table_next_column();
+                    ui.text(format!("B: {}", self.cpu.registers.b));
+                    ui.table_next_column();
+                    ui.text(format!("C: {}", self.cpu.registers.c));
+                    ui.table_next_column();
+                    ui.text(format!("D: {}", self.cpu.registers.d));
+
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text(format!("E: {}", self.cpu.registers.e));
+                    ui.table_next_column();
+                    ui.text(format!("F: {}", self.cpu.registers.f));
+                    ui.table_next_column();
+                    ui.text(format!("H: {}", self.cpu.registers.h));
+                    ui.table_next_column();
+                    ui.text(format!("L: {}", self.cpu.registers.l));
+
+                    registers_table.end();
+                }
+
                 ui.separator();
-                ui.text(format!("Z: {}", self.cpu.registers.f.z()));
-                ui.text(format!("N: {}", self.cpu.registers.f.n()));
-                ui.text(format!("H: {}", self.cpu.registers.f.h()));
-                ui.text(format!("C: {}", self.cpu.registers.f.c()));
+
+                if let Some(flags_table) = ui.begin_table("flags_table", 4) {
+                    ui.table_next_row();
+
+                    ui.table_next_column();
+                    ui.text(format!("Z: {}", self.cpu.registers.f.z()));
+                    ui.table_next_column();
+                    ui.text(format!("N: {}", self.cpu.registers.f.n()));
+                    ui.table_next_column();
+                    ui.text(format!("H: {}", self.cpu.registers.f.h()));
+                    ui.table_next_column();
+                    ui.text(format!("C: {}", self.cpu.registers.f.c()));
+
+                    flags_table.end();
+                }
+
                 ui.separator();
-                ui.text(format!("IME: {}", self.cpu.ime));
-                ui.text(format!("Joypad: {}", self.mmu.interrupt_enabled.joypad()));
-                ui.text(format!("Serial: {}", self.mmu.interrupt_enabled.serial()));
-                ui.text(format!("Timer: {}", self.mmu.interrupt_enabled.timer()));
-                ui.text(format!("LCD: {}", self.mmu.interrupt_enabled.lcd()));
-                ui.text(format!("VBlank: {}", self.mmu.interrupt_enabled.v_blank()));
-                ui.separator();
+
                 ui.text(format!("Halted: {}", self.cpu.halted));
                 ui.text(format!("Instruction Set: {}", self.cpu.instruction_set));
+            }
+
+            if ui.collapsing_header("Interrupt", TreeNodeFlags::DEFAULT_OPEN) {
+                ui.text(format!("IME: {}", self.cpu.ime));
+                ui.separator();
+                ui.text("Enabled");
+                if let Some(int_enabled_table) = ui.begin_table("int_enabled_table", 3) {
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text(format!("Joypad: {}", self.mmu.interrupt_enabled.joypad()));
+                    ui.table_next_column();
+                    ui.text(format!("Serial: {}", self.mmu.interrupt_enabled.serial()));
+                    ui.table_next_column();
+                    ui.text(format!("Timer: {}", self.mmu.interrupt_enabled.timer()));
+
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text(format!("LCD: {}", self.mmu.interrupt_enabled.lcd()));
+                    ui.table_next_column();
+                    ui.text(format!("VBlank: {}", self.mmu.interrupt_enabled.v_blank()));
+
+                    int_enabled_table.end();
+                }
+
+                ui.separator();
+                ui.text("Requested");
+
+                if let Some(int_requested_table) = ui.begin_table("int_requested_table", 3) {
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text(format!("Joypad: {}", self.mmu.interrupt_flag.joypad()));
+                    ui.table_next_column();
+                    ui.text(format!("Serial: {}", self.mmu.interrupt_flag.serial()));
+                    ui.table_next_column();
+                    ui.text(format!("Timer: {}", self.mmu.interrupt_flag.timer()));
+
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text(format!("LCD: {}", self.mmu.interrupt_flag.lcd()));
+                    ui.table_next_column();
+                    ui.text(format!("VBlank: {}", self.mmu.interrupt_flag.v_blank()));
+
+                    int_requested_table.end();
+                }
             }
 
             left_panel_win_token.end();
@@ -334,7 +410,7 @@ impl Emulator {
             .position([980.0, 0.0], imgui::Condition::FirstUseEver)
             .begin()
         {
-            if ui.collapsing_header("Debug", TreeNodeFlags::DEFAULT_OPEN) {
+            if imgui::CollapsingHeader::new("Debug").build(ui) {
                 if ui.button("Pause") {
                     self.debug_mode = DebugMode::Pause;
                 }
