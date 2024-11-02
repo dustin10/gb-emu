@@ -176,8 +176,8 @@ impl Emulator {
             gl.use_program(Some(program));
         }
 
+        // for now just create a texture with random colors at each pixel
         let mut pixel_data = vec![u8::MAX; 640 * 576 * 3];
-
         for i in 0..pixel_data.len() {
             let random_color = rand::thread_rng().gen();
             pixel_data[i] = random_color;
@@ -563,6 +563,8 @@ impl Emulator {
     }
 }
 
+/// Source code for the OpenGL vertex shader that outputs the screen texture to the window. It
+/// hard-codes a static square which the screen texture is mapped onto.
 const VERTEX_SHADER_SOURCE: &str = r#"
 #version 330 core
 
@@ -594,6 +596,8 @@ void main() {
 }
 "#;
 
+/// Source code for the OpenGL fragment shader that outputs the screen texture to the window. It
+/// samples the screen texture that is computed per frame based on the state of the GameBoy.
 const FRAGMENT_SHADER_SOURCE: &str = r#"
 #version 330 core
 
