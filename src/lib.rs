@@ -16,6 +16,7 @@ use imgui_glow_renderer::{
     AutoRenderer,
 };
 use imgui_sdl2_support::SdlPlatform;
+use rand::Rng;
 use sdl2::{event::Event, keyboard::Keycode, video::Window};
 use std::{cell::RefCell, rc::Rc};
 
@@ -126,16 +127,11 @@ impl Emulator {
 
         let mut platform = SdlPlatform::new(&mut imgui);
         let mut renderer = AutoRenderer::new(gl, &mut imgui).expect("renderer created");
-        let gl = renderer.gl_context();
+        let gl = Rc::clone(renderer.gl_context());
 
         let vertex_array = unsafe {
-            let vertex_array = gl
-                .create_vertex_array()
-                .expect("Cannot create vertex array");
-
-            gl.bind_vertex_array(Some(vertex_array));
-
-            vertex_array
+            gl.create_vertex_array()
+                .expect("Cannot create vertex array")
         };
 
         let program = unsafe { gl.create_program().expect("program created") };
@@ -179,6 +175,44 @@ impl Emulator {
 
             gl.use_program(Some(program));
         }
+
+        let mut pixel_data = vec![u8::MAX; 640 * 576 * 3];
+
+        for i in 0..pixel_data.len() {
+            let random_color = rand::thread_rng().gen();
+            pixel_data[i] = random_color;
+        }
+
+        let texture = unsafe {
+            let texture = gl.create_texture().expect("screen texture created");
+
+            gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                glow::NEAREST as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                glow::LINEAR as i32,
+            );
+
+            gl.tex_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                glow::RGB8 as i32,
+                640,
+                576,
+                0,
+                glow::RGB,
+                glow::UNSIGNED_BYTE,
+                Some(&pixel_data),
+            );
+
+            texture
+        };
 
         let mut event_pump = match sdl_context.event_pump() {
             Err(msg) => anyhow::bail!(msg),
@@ -305,10 +339,15 @@ impl Emulator {
 
             let draw_data = imgui.render();
 
-            unsafe { renderer.gl_context().clear(glow::COLOR_BUFFER_BIT) };
+            unsafe { gl.clear(glow::COLOR_BUFFER_BIT) };
+
             renderer.render(draw_data).expect("imgui ui rendered");
 
-            unsafe { renderer.gl_context().draw_arrays(glow::TRIANGLES, 0, 6) };
+            unsafe {
+                gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+                gl.bind_vertex_array(Some(vertex_array));
+                gl.draw_arrays(glow::TRIANGLES, 0, 6)
+            }
 
             window.gl_swap_window();
         }
@@ -316,6 +355,7 @@ impl Emulator {
         tracing::debug!("destroying opengl resources");
 
         unsafe {
+            renderer.gl_context().delete_texture(texture);
             renderer.gl_context().delete_program(program);
             renderer.gl_context().delete_vertex_array(vertex_array);
         };
@@ -508,7 +548,12 @@ impl Emulator {
             }
 
             if ui.collapsing_header("Instructions", TreeNodeFlags::DEFAULT_OPEN) {
-                for inst in self.cpu.history.iter() {
+                if let Some(last) = self.cpu.history.front() {
+                    ui.text(format!("{}", last));
+                    ui.separator();
+                }
+
+                for inst in self.cpu.history.iter().skip(1) {
                     ui.text(format!("{}", inst));
                 }
             }
@@ -519,7 +564,7 @@ impl Emulator {
 }
 
 const VERTEX_SHADER_SOURCE: &str = r#"
-#version 330
+#version 330 core
 
 const vec2 verts[6] = vec2[6](
     vec2(-0.5f, -1.0f),
@@ -531,24 +576,35 @@ const vec2 verts[6] = vec2[6](
     vec2(-0.5f, -1.0f)
 );
 
-out vec2 vert;
+const vec2 tex_coords[6] = vec2[6](
+    vec2(0.0f, 0.0f),
+    vec2(0.0f, 1.0f),
+    vec2(1.0f, 1.0f),
+
+    vec2(1.0f, 1.0f),
+    vec2(1.0f, 0.0f),
+    vec2(0.0f, 0.0f)
+);
+
+out vec2 tex_coord;
 
 void main() {
-    vert = verts[gl_VertexID];
-    gl_Position = vec4(vert, 0.0, 1.0);
+    tex_coord = tex_coords[gl_VertexID];
+    gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0);
 }
 "#;
 
 const FRAGMENT_SHADER_SOURCE: &str = r#"
-#version 330
+#version 330 core
 
-precision mediump float;
+uniform sampler2D screen_tex;
 
-in vec2 vert;
+in vec2 tex_coord;
+
 out vec4 color;
 
 void main() {
-    color = vec4(vert, 0.5, 1.0);
+    color = texture(screen_tex, tex_coord);
 }
 "#;
 
