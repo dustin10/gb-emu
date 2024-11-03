@@ -16,7 +16,6 @@ use imgui_glow_renderer::{
     AutoRenderer,
 };
 use imgui_sdl2_support::SdlPlatform;
-use rand::Rng;
 use sdl2::{event::Event, keyboard::Keycode, video::Window};
 use std::{cell::RefCell, rc::Rc};
 
@@ -176,11 +175,25 @@ impl Emulator {
             gl.use_program(Some(program));
         }
 
-        // for now just create a texture with random colors at each pixel
+        // for now just write color palette to the screen texture
         let mut pixel_data = vec![u8::MAX; 640 * 576 * 3];
-        for i in 0..pixel_data.len() {
-            let random_color = rand::thread_rng().gen();
-            pixel_data[i] = random_color;
+        for row in 0..576 {
+            for col in 0..640 {
+                let (r, g, b) = if col < 160 {
+                    (155, 188, 15)
+                } else if col < 320 {
+                    (139, 172, 15)
+                } else if col < 480 {
+                    (48, 98, 48)
+                } else {
+                    (15, 56, 15)
+                };
+
+                let base = (3 * row * 640) + (col * 3);
+                pixel_data[base] = r;
+                pixel_data[base + 1] = g;
+                pixel_data[base + 2] = b;
+            }
         }
 
         let texture = unsafe {

@@ -17,7 +17,6 @@ clap = { version = "4.5.20", features = ["derive"] }
 imgui = { version = "0.12.0", features = ["tables-api"] }
 imgui-glow-renderer = "0.13.0"
 imgui-sdl2-support = "0.13.0"
-rand = "0.8.5"
 sdl2 = "0.37.0"
 tracing = { version = "0.1.40", features = ["log"] }
 tracing-subscriber = { version = "0.3.18", features = ["json", "env-filter"] }
