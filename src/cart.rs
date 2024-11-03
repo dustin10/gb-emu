@@ -130,10 +130,6 @@ impl Display for CartridgeType {
 /// The [`Mbc`] trait defines the common behavior required for the various memory bank controllers
 /// that can exist on a GameBoy cartridge.
 pub trait Mbc {
-    /// Returns true if the [`Mbc`] handles the specified memory address.
-    fn handles_address(&self, address: u16) -> bool {
-        address > 0 && address <= 0x7FFF
-    }
     /// Reads a single byte from memory at the given address.
     fn read(&self, address: u16) -> u8;
     /// Writes a single byte to memory at the given address.

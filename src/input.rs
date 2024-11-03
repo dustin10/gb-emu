@@ -69,12 +69,8 @@ pub trait Input {
     fn button_down(&mut self, button: Button);
     /// Marks the specified [`Button`] as being released.
     fn button_up(&mut self, button: Button);
-    /// Determines if the [`Input`] implementation should handle the read at the address.
-    fn handles_read(&self, address: u16) -> bool;
     /// Returns the current state of the input as a byte.
     fn read(&self) -> u8;
-    /// Determines if the [`Input`] implementation should handle the write to the address.
-    fn handles_write(&self, address: u16) -> bool;
     /// Writes the given byte back to the [`Input`] by updating the [`ReadMode`] based on the
     /// values in the relevant bit positions.
     fn write(&mut self, byte: u8);
@@ -192,10 +188,6 @@ impl Input for Joypad {
         let value = self.state.get_mut(&button).expect("key for button exists");
         *value = false;
     }
-    /// Determines if the [`Input`] implementation should handle the write to the address.
-    fn handles_write(&self, address: u16) -> bool {
-        address == 0xFF00
-    }
     /// Writes the given byte back to the [`Input`] by updating the [`ReadMode`] based on the
     /// values in the relevant bit positions.
     fn write(&mut self, byte: u8) {
@@ -210,10 +202,6 @@ impl Input for Joypad {
         };
 
         self.mode = mode;
-    }
-    /// Determines if the [`Input`] implementation should handle the read at the address.
-    fn handles_read(&self, address: u16) -> bool {
-        address == 0xFF00
     }
     /// Reads the current state of the input and returns the byte representation.
     fn read(&self) -> u8 {
@@ -272,18 +260,6 @@ mod tests {
             joypad.button_up(b);
             assert!(!*joypad.state.get(&b).expect("key exists"));
         })
-    }
-
-    #[test]
-    fn test_joypad_handles_read() {
-        {
-            let joypad = Joypad::new();
-            assert!(joypad.handles_read(0xFF00));
-        }
-        {
-            let joypad = Joypad::new();
-            assert!(!joypad.handles_read(0xA000));
-        }
     }
 
     #[test]
@@ -353,18 +329,6 @@ mod tests {
             joypad.write(1 << DIRECTIONS_BIT_POSITION);
             joypad.button_down(Button::Start);
             assert_eq!(0b00011000, joypad.read());
-        }
-    }
-
-    #[test]
-    fn test_joypad_handles_write() {
-        {
-            let joypad = Joypad::new();
-            assert!(joypad.handles_write(0xFF00));
-        }
-        {
-            let joypad = Joypad::new();
-            assert!(!joypad.handles_write(0xA000));
         }
     }
 }

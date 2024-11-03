@@ -1,4 +1,4 @@
-use crate::mem::Mmu;
+use crate::mem::Mapper;
 
 use bounded_vec_deque::BoundedVecDeque;
 use std::fmt::Display;
@@ -1360,7 +1360,7 @@ impl Cpu {
     }
     /// Reads and executes the next instruction based on the current program counter. Returns the
     /// number of clock ticks it took to execute the instruction.
-    pub fn step(&mut self, memory: &mut Mmu) -> u64 {
+    pub fn step(&mut self, memory: &mut dyn Mapper) -> u64 {
         let op_code = memory.read_u8(self.registers.pc);
 
         let instruction = match self.instruction_set {
@@ -1398,7 +1398,7 @@ impl Cpu {
         }
     }
     /// Transforms the given op code into an [`Instruction`] which can be executed by the [`Cpu`].
-    fn decode(&self, op_code: u8, memory: &Mmu) -> Option<Instruction> {
+    fn decode(&self, op_code: u8, memory: &dyn Mapper) -> Option<Instruction> {
         tracing::debug!("decode op code {:#4x}", op_code);
 
         match op_code {
@@ -1406,7 +1406,7 @@ impl Cpu {
             0x00 => Some(Instruction::nop()),
             0x01 => Some(Instruction::ld_u16(
                 Target16Bit::BC,
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0x02 => Some(Instruction::ld_a(Target16Bit::BC)),
             0x03 => Some(Instruction::inc_u16(Target::BC)),
@@ -1418,7 +1418,7 @@ impl Cpu {
             )),
             0x07 => Some(Instruction::rlc_a()),
             0x08 => Some(Instruction::ld_a16(
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
                 Target16Bit::SP,
             )),
             0x09 => Some(Instruction::add_hl(Target16Bit::BC)),
@@ -1436,7 +1436,7 @@ impl Cpu {
             0x10 => Some(Instruction::stop()),
             0x11 => Some(Instruction::ld_u16(
                 Target16Bit::DE,
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0x12 => Some(Instruction::ld_a(Target16Bit::DE)),
             0x13 => Some(Instruction::inc_u16(Target::DE)),
@@ -1448,7 +1448,7 @@ impl Cpu {
             )),
             0x17 => Some(Instruction::rl_a()),
             0x18 => Some(Instruction::jr(
-                memory.read_i8(self.registers.pc.wrapping_add(1)),
+                memory.read_u8(self.registers.pc.wrapping_add(1)) as i8,
             )),
             0x19 => Some(Instruction::add_hl(Target16Bit::DE)),
             0x1A => Some(Instruction::ld_a_mem(Target16Bit::DE)),
@@ -1465,11 +1465,11 @@ impl Cpu {
             0x20 => Some(Instruction::jrc(
                 CondJumpTarget::NZ,
                 !self.registers.f.z(),
-                memory.read_i8(self.registers.pc.wrapping_add(1)),
+                memory.read_u8(self.registers.pc.wrapping_add(1)) as i8,
             )),
             0x21 => Some(Instruction::ld_u16(
                 Target16Bit::HL,
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0x22 => Some(Instruction::ld_a_inc()),
             0x23 => Some(Instruction::inc_u16(Target::HL)),
@@ -1483,7 +1483,7 @@ impl Cpu {
             0x28 => Some(Instruction::jrc(
                 CondJumpTarget::Z,
                 self.registers.f.z(),
-                memory.read_i8(self.registers.pc.wrapping_add(1)),
+                memory.read_u8(self.registers.pc.wrapping_add(1)) as i8,
             )),
             0x29 => Some(Instruction::add_hl(Target16Bit::HL)),
             0x2A => Some(Instruction::ld_a_mem_inc()),
@@ -1500,11 +1500,11 @@ impl Cpu {
             0x30 => Some(Instruction::jrc(
                 CondJumpTarget::NC,
                 !self.registers.f.c(),
-                memory.read_i8(self.registers.pc.wrapping_add(1)),
+                memory.read_u8(self.registers.pc.wrapping_add(1)) as i8,
             )),
             0x31 => Some(Instruction::ld_u16(
                 Target16Bit::SP,
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0x32 => Some(Instruction::ld_a_dec()),
             0x33 => Some(Instruction::inc_u16(Target::SP)),
@@ -1517,7 +1517,7 @@ impl Cpu {
             0x38 => Some(Instruction::jrc(
                 CondJumpTarget::C,
                 self.registers.f.c(),
-                memory.read_i8(self.registers.pc.wrapping_add(1)),
+                memory.read_u8(self.registers.pc.wrapping_add(1)) as i8,
             )),
             0x39 => Some(Instruction::add_hl(Target16Bit::SP)),
             0x3A => Some(Instruction::ld_a_mem_dec()),
@@ -1680,15 +1680,15 @@ impl Cpu {
             0xC2 => Some(Instruction::jpc(
                 CondJumpTarget::NZ,
                 !self.registers.f.z(),
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0xC3 => Some(Instruction::jp(
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0xC4 => Some(Instruction::callc(
                 CondJumpTarget::NZ,
                 !self.registers.f.z(),
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0xC5 => Some(Instruction::push(PushPopTarget::BC)),
             0xC6 => Some(Instruction::add_a_u8(
@@ -1700,16 +1700,16 @@ impl Cpu {
             0xCA => Some(Instruction::jpc(
                 CondJumpTarget::Z,
                 self.registers.f.z(),
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0xCB => Some(Instruction::prefix()),
             0xCC => Some(Instruction::callc(
                 CondJumpTarget::Z,
                 self.registers.f.z(),
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0xCD => Some(Instruction::call(
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0xCE => Some(Instruction::adc_a_u8(
                 memory.read_u8(self.registers.pc.wrapping_add(1)),
@@ -1722,12 +1722,12 @@ impl Cpu {
             0xD2 => Some(Instruction::jpc(
                 CondJumpTarget::NC,
                 !self.registers.f.c(),
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0xD4 => Some(Instruction::callc(
                 CondJumpTarget::NC,
                 !self.registers.f.c(),
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0xD5 => Some(Instruction::push(PushPopTarget::DE)),
             0xD6 => Some(Instruction::sub_a_u8(
@@ -1739,12 +1739,12 @@ impl Cpu {
             0xDA => Some(Instruction::jpc(
                 CondJumpTarget::C,
                 self.registers.f.c(),
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0xDC => Some(Instruction::callc(
                 CondJumpTarget::C,
                 self.registers.f.c(),
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0xDE => Some(Instruction::sbc_a_u8(
                 memory.read_u8(self.registers.pc.wrapping_add(1)),
@@ -1763,11 +1763,11 @@ impl Cpu {
             )),
             0xE7 => Some(Instruction::rst(0x20)),
             0xE8 => Some(Instruction::add_sp(
-                memory.read_i8(self.registers.pc.wrapping_add(1)),
+                memory.read_u8(self.registers.pc.wrapping_add(1)) as i8,
             )),
             0xE9 => Some(Instruction::jp_hl()),
             0xEA => Some(Instruction::ld_a_u16(
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0xEE => Some(Instruction::xor_a_u8(
                 memory.read_u8(self.registers.pc.wrapping_add(1)),
@@ -1787,11 +1787,11 @@ impl Cpu {
             )),
             0xF7 => Some(Instruction::rst(0x30)),
             0xF8 => Some(Instruction::ld_hl_sp(
-                memory.read_i8(self.registers.pc.wrapping_add(1)),
+                memory.read_u8(self.registers.pc.wrapping_add(1)) as i8,
             )),
             0xF9 => Some(Instruction::ld_sp_hl()),
             0xFA => Some(Instruction::ld_mem_a(
-                memory.read_u16(self.registers.pc.wrapping_add(1)),
+                self.read_u16(memory, self.registers.pc.wrapping_add(1)),
             )),
             0xFB => Some(Instruction::ei()),
             0xFE => Some(Instruction::cp_a_u8(
@@ -2100,7 +2100,7 @@ impl Cpu {
     }
     /// Executes the given [`Instruction`] returning the new program counter value and whether or
     /// not the op code for the next instruction is prefixed.
-    fn execute(&mut self, instruction: &Instruction, memory: &mut Mmu) {
+    fn execute(&mut self, instruction: &Instruction, memory: &mut dyn Mapper) {
         tracing::debug!("execute instruction '{}'", instruction);
 
         match instruction.operation {
@@ -3443,6 +3443,14 @@ impl Cpu {
             }
         }
     }
+    /// Reads the next two bytes from the given address in memory and combines them into a single
+    /// u16 value.
+    pub fn read_u16(&self, memory: &dyn Mapper, address: u16) -> u16 {
+        let low = memory.read_u8(address);
+        let high = memory.read_u8(address + 1);
+
+        (high as u16) << 8 | low as u16
+    }
 }
 
 /// Detrmines if the addtion of `b` to `a` will cause a half-carry.
@@ -3464,6 +3472,29 @@ fn will_half_carry_sub_u8(a: u8, b: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::cart::{Mbc, RomOnly};
+
+    struct TestMapper {
+        inner: RomOnly,
+    }
+
+    impl TestMapper {
+        fn new() -> Self {
+            Self {
+                inner: RomOnly::new(),
+            }
+        }
+    }
+
+    impl Mapper for TestMapper {
+        fn read_u8(&self, address: u16) -> u8 {
+            self.inner.read(address)
+        }
+        fn write_u8(&mut self, address: u16, byte: u8) {
+            self.inner.write(address, byte);
+        }
+    }
 
     #[test]
     fn test_flags_c() {
@@ -3516,27 +3547,34 @@ mod tests {
         flags.set_z(false);
         assert!(!flags.z());
     }
+
+    #[test]
+    fn test_mmu_rom_only_read_u16() {
+        let mut mapper = TestMapper::new();
+        mapper.write_u8(0x1010, 0x01);
+        mapper.write_u8(0x1011, 0x01);
+
+        let cpu = Cpu::new();
+
+        let value = cpu.read_u16(&mapper, 0x1010);
+        assert_eq!(0x0101, value);
+    }
 }
 
 #[cfg(test)]
 mod json_tests {
-    use crate::{
-        cart::{Mbc, RomOnly},
-        input::Input,
-    };
-
     use super::*;
 
+    use crate::cart::{Mbc, RomOnly};
+
     use serde::Deserialize;
-    use std::{cell::RefCell, path::Path, rc::Rc};
+    use std::path::Path;
 
-    struct TestInput;
-
-    struct TestMbc {
+    struct TestMapper {
         inner: RomOnly,
     }
 
-    impl TestMbc {
+    impl TestMapper {
         fn new() -> Self {
             Self {
                 inner: RomOnly::new(),
@@ -3544,33 +3582,12 @@ mod json_tests {
         }
     }
 
-    impl Mbc for TestMbc {
-        fn handles_address(&self, _address: u16) -> bool {
-            true
-        }
-        fn read(&self, address: u16) -> u8 {
+    impl Mapper for TestMapper {
+        fn read_u8(&self, address: u16) -> u8 {
             self.inner.read(address)
         }
-        fn write(&mut self, address: u16, byte: u8) {
+        fn write_u8(&mut self, address: u16, byte: u8) {
             self.inner.write(address, byte);
-        }
-        fn write_block(&mut self, start_addr: u16, bytes: &[u8]) {
-            self.inner.write_block(start_addr, bytes);
-        }
-    }
-
-    impl Input for TestInput {
-        fn button_down(&mut self, _button: crate::input::Button) {}
-        fn button_up(&mut self, _button: crate::input::Button) {}
-        fn handles_write(&self, _address: u16) -> bool {
-            false
-        }
-        fn write(&mut self, _byte: u8) {}
-        fn handles_read(&self, _address: u16) -> bool {
-            false
-        }
-        fn read(&self) -> u8 {
-            0
         }
     }
 
@@ -3588,7 +3605,6 @@ mod json_tests {
         h: u8,
         l: u8,
         ime: u8,
-        ie: Option<u8>,
         ram: Vec<Vec<u16>>, // TODO: can probably make this better
     }
 
@@ -3634,9 +3650,6 @@ mod json_tests {
     fn execute(test: Test, instruction_set: InstructionSet) {
         println!("execute json test {}", test.name);
 
-        let mbc = Rc::new(RefCell::new(TestMbc::new()));
-        let input = Rc::new(RefCell::new(TestInput));
-
         let mut cpu = Cpu::new();
         cpu.instruction_set = instruction_set;
         cpu.registers.pc = test.input.pc;
@@ -3657,8 +3670,7 @@ mod json_tests {
             cpu.registers.pc = cpu.registers.pc.wrapping_add(1);
         }
 
-        let mut mmu = Mmu::new(mbc, input);
-        mmu.interrupt_enabled = test.input.ie.unwrap_or(0).into();
+        let mut mapper = TestMapper::new();
 
         for byte in test.input.ram {
             if byte.len() != 2 {
@@ -3668,10 +3680,10 @@ mod json_tests {
             let address = byte[0];
             let value = byte[1] as u8;
 
-            mmu.write_u8(address, value);
+            mapper.write_u8(address, value);
         }
 
-        cpu.step(&mut mmu);
+        cpu.step(&mut mapper);
 
         let f_value: u8 = cpu.registers.f.into();
 
@@ -3689,11 +3701,6 @@ mod json_tests {
         let ime = if cpu.ime { 1 } else { 0 };
         assert_eq!(test.output.ime, ime);
 
-        if let Some(ie) = test.output.ie {
-            let mmu_ie: u8 = mmu.interrupt_enabled.into();
-            assert_eq!(ie, mmu_ie);
-        }
-
         for byte in test.output.ram {
             if byte.len() != 2 {
                 panic!("invalid byte data");
@@ -3702,7 +3709,7 @@ mod json_tests {
             let address = byte[0];
             let expected = byte[1] as u8;
 
-            let actual = mmu.read_u8(address);
+            let actual = mapper.read_u8(address);
 
             assert_eq!(expected, actual);
         }
