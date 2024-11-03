@@ -21,7 +21,7 @@ use std::{cell::RefCell, rc::Rc};
 
 /// Contains the memory address the program counter should be set to after the boot screen is
 /// displayed in order to start executing the cartridge instructions.
-const START_INSTRUCTION: u16 = 0x0100;
+const _START_INSTRUCTION: u16 = 0x0100;
 
 /// Enumerates the different states that the emulator can be in when using the debug functionality.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -231,8 +231,6 @@ impl Emulator {
             Err(msg) => anyhow::bail!(msg),
             Ok(event_pump) => event_pump,
         };
-
-        self.cpu.registers.pc = START_INSTRUCTION;
 
         'main: loop {
             let ticks = match self.debug_mode {

@@ -5,7 +5,7 @@ use std::{cell::RefCell, fmt::Display, rc::Rc};
 /// Array of bytes that make up the boot ROM that was burned directly onto the CPU of the GameBoy.
 /// These instructions are read to display the logo and then afterward control is given over to the
 /// cartridge to start execution of the game.
-const _BOOT_DMG: [u8; 256] = [
+const BOOT_ROM: [u8; 256] = [
     0x31, 0xFE, 0xFF, 0xAF, 0x21, 0xFF, 0x9F, 0x32, 0xCB, 0x7C, 0x20, 0xFB, 0x21, 0x26, 0xFF, 0x0E,
     0x11, 0x3E, 0x80, 0x32, 0xE2, 0x0C, 0x3E, 0xF3, 0xE2, 0x32, 0x3E, 0x77, 0x77, 0x3E, 0xFC, 0xE0,
     0x47, 0x11, 0x04, 0x01, 0x21, 0x10, 0x80, 0x1A, 0xCD, 0x95, 0x00, 0xCD, 0x96, 0x00, 0x13, 0x7B,
@@ -97,6 +97,9 @@ const IE_ADDRESS: u16 = 0xFFFF;
 /// Memory address of the Interrupt flag (IF).
 const IF_ADDRESS: u16 = 0xFF0F;
 
+/// Memory address of the BANK register.
+const BANK_REG_ADDRESS: u16 = 0xFF50;
+
 /// Defines a simple interface for reading and writing bytes of memory.
 pub trait Mapper {
     /// Reads a single byte from memory at the given address.
@@ -105,9 +108,20 @@ pub trait Mapper {
     fn write_u8(&mut self, address: u16, byte: u8);
 }
 
+/// Enumerates the modes that the [`Mmu`] can execute in.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Mode {
+    /// Mapping memory for the boot ROM.
+    Boot,
+    /// Mapping memory for the game on the cartridge.
+    Cartridge,
+}
+
 /// The memory map unit which is responsible for reading and writing the various types of memory
 /// available on the GameBoy.
 pub struct Mmu {
+    /// [`Mode`] that memory is currently being mapped for.
+    pub mode: Mode,
     /// Memory bank controller from the [`Cartridge`].
     pub mbc: Rc<RefCell<dyn Mbc>>,
     /// [`Input`] that contains state of the GameBoy controller.
@@ -122,6 +136,7 @@ impl Mmu {
     /// Creates a new [`Mmu`].
     pub fn new(mbc: Rc<RefCell<dyn Mbc>>, input: Rc<RefCell<dyn Input>>) -> Self {
         Self {
+            mode: Mode::Boot,
             mbc,
             input,
             interrupt_enabled: InterruptFlag::default(),
@@ -137,15 +152,28 @@ impl Mmu {
 impl Mapper for Mmu {
     /// Reads a single byte from memory at the given address.
     fn read_u8(&self, address: u16) -> u8 {
-        match address {
-            0..=0x7FFF => self.mbc.borrow().read(address),
-            INPUT_ADDRESS => self.input.borrow().read(),
-            IE_ADDRESS => self.interrupt_enabled.into(),
-            IF_ADDRESS => self.interrupt_flag.into(),
-            _ => {
-                tracing::warn!("read from unmapped address: {:4x}", address);
-                0
-            }
+        match self.mode {
+            Mode::Boot => match address {
+                0..0xFF => BOOT_ROM[address as usize],
+                _ => panic!("read invalid boot ROM address"),
+            },
+            Mode::Cartridge => match address {
+                0..=0x7FFF => self.mbc.borrow().read(address),
+                INPUT_ADDRESS => self.input.borrow().read(),
+                IE_ADDRESS => self.interrupt_enabled.into(),
+                IF_ADDRESS => self.interrupt_flag.into(),
+                BANK_REG_ADDRESS => {
+                    if self.mode == Mode::Boot {
+                        0
+                    } else {
+                        1
+                    }
+                }
+                _ => {
+                    tracing::warn!("read from unmapped address: {:4x}", address);
+                    0
+                }
+            },
         }
     }
     /// Writes a single byte to memory at the given address.
@@ -155,6 +183,7 @@ impl Mapper for Mmu {
             INPUT_ADDRESS => self.input.borrow_mut().write(byte),
             IE_ADDRESS => self.interrupt_enabled = byte.into(),
             IF_ADDRESS => self.interrupt_flag = byte.into(),
+            BANK_REG_ADDRESS => self.mode = Mode::Cartridge,
             _ => tracing::warn!("write to unmapped address: {:4x}", address),
         }
     }
@@ -181,7 +210,10 @@ mod tests {
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
         let input = Rc::new(RefCell::new(TestInput));
 
-        Mmu::new(mbc, input)
+        let mut mmu = Mmu::new(mbc, input);
+        mmu.mode = Mode::Cartridge;
+
+        mmu
     }
 
     #[test]
