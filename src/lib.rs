@@ -12,7 +12,7 @@ use crate::{
 };
 
 use gfx::Gpu;
-use imgui::{Context, TreeNodeFlags, Ui};
+use imgui::{Context, TableColumnSetup, TreeNodeFlags, Ui};
 use imgui_glow_renderer::{
     glow::{self, HasContext},
     AutoRenderer,
@@ -408,16 +408,45 @@ impl Emulator {
                 ));
                 ui.text(format!("Version: {}", self.cartridge.header.version));
                 ui.text(format!("Type: {}", self.cartridge.header.cartridge_type));
-                ui.text(format!(
-                    "Header Checksum: Exp {}/Calc {}",
-                    self.cartridge.header.expected_header_checksum,
-                    self.cartridge.header.computed_header_checksum
-                ));
-                ui.text(format!(
-                    "Global Checksum: Exp {}/Calc {}",
-                    self.cartridge.header.expected_global_checksum,
-                    self.cartridge.header.computed_global_checksum
-                ));
+                ui.separator();
+                if let Some(checksums_table) = ui.begin_table_header(
+                    "checksums_table",
+                    [
+                        TableColumnSetup::new("Checksum"),
+                        TableColumnSetup::new("Expected"),
+                        TableColumnSetup::new("Calculated"),
+                    ],
+                ) {
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text("Header");
+                    ui.table_next_column();
+                    ui.text(format!(
+                        "{}",
+                        self.cartridge.header.expected_header_checksum
+                    ));
+                    ui.table_next_column();
+                    ui.text(format!(
+                        "{}",
+                        self.cartridge.header.computed_header_checksum
+                    ));
+
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text("Global");
+                    ui.table_next_column();
+                    ui.text(format!(
+                        "{}",
+                        self.cartridge.header.expected_global_checksum,
+                    ));
+                    ui.table_next_column();
+                    ui.text(format!(
+                        "{}",
+                        self.cartridge.header.computed_global_checksum
+                    ));
+
+                    checksums_table.end();
+                }
             }
 
             if ui.collapsing_header("CPU", TreeNodeFlags::DEFAULT_OPEN) {
