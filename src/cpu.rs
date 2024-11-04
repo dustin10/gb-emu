@@ -3489,10 +3489,10 @@ mod tests {
 
     impl Mapper for TestMapper {
         fn read_u8(&self, address: u16) -> u8 {
-            self.inner.read(address)
+            self.inner.read_u8(address)
         }
         fn write_u8(&mut self, address: u16, byte: u8) {
-            self.inner.write(address, byte);
+            self.inner.write_u8(address, byte);
         }
     }
 
@@ -3584,10 +3584,10 @@ mod json_tests {
 
     impl Mapper for TestMapper {
         fn read_u8(&self, address: u16) -> u8 {
-            self.inner.read(address)
+            self.inner.read_u8(address)
         }
         fn write_u8(&mut self, address: u16, byte: u8) {
-            self.inner.write(address, byte);
+            self.inner.write_u8(address, byte);
         }
     }
 

@@ -131,9 +131,9 @@ impl Display for CartridgeType {
 /// that can exist on a GameBoy cartridge.
 pub trait Mbc {
     /// Reads a single byte from memory at the given address.
-    fn read(&self, address: u16) -> u8;
+    fn read_u8(&self, address: u16) -> u8;
     /// Writes a single byte to memory at the given address.
-    fn write(&mut self, address: u16, byte: u8);
+    fn write_u8(&mut self, address: u16, byte: u8);
     /// Writes a block of bytes to memory at the given start address.
     fn write_block(&mut self, start_addr: u16, bytes: &[u8]);
 }
@@ -155,11 +155,11 @@ impl RomOnly {
 
 impl Mbc for RomOnly {
     /// Reads a single byte from memory at the given address.
-    fn read(&self, address: u16) -> u8 {
+    fn read_u8(&self, address: u16) -> u8 {
         self.data[address as usize]
     }
     /// Writes a single byte to memory at the given address.
-    fn write(&mut self, address: u16, byte: u8) {
+    fn write_u8(&mut self, address: u16, byte: u8) {
         self.data[address as usize] = byte;
     }
     /// Writes a block of bytes to memory at the given start address.

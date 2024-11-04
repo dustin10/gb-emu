@@ -1,4 +1,4 @@
-use crate::{cart::Mbc, input::Input};
+use crate::{cart::Mbc, gfx::Gpu, input::Input};
 
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
@@ -88,6 +88,7 @@ impl Display for InterruptFlag {
     }
 }
 
+/// End of the addressable space for the MBC.
 const END_MBC_ADDRESS: u16 = 0x7FFF;
 
 /// Memory address of the input controller.
@@ -101,6 +102,12 @@ const IF_ADDRESS: u16 = 0xFF0F;
 
 /// Memory address of the BANK register.
 const BANK_REG_ADDRESS: u16 = 0xFF50;
+
+/// Start of the addressable space for VRAM.
+const START_VRAM_ADDRESS: u16 = 0x8000;
+
+/// End of the addressable space for VRAM.
+const END_VRAM_ADDRESS: u16 = 0x9FFF;
 
 /// Defines a simple interface for reading and writing bytes of memory.
 pub trait Mapper {
@@ -124,10 +131,12 @@ pub enum Mode {
 pub struct Mmu {
     /// [`Mode`] that memory is currently being mapped for.
     pub mode: Mode,
-    /// Memory bank controller from the [`Cartridge`].
+    /// [`Mbc`] implementation resolved from the [`Cartridge`] header.
     pub mbc: Rc<RefCell<dyn Mbc>>,
     /// [`Input`] that contains state of the GameBoy controller.
     pub input: Rc<RefCell<Input>>,
+    /// [`Gpu`] that contains video memory.
+    pub gpu: Rc<RefCell<Gpu>>,
     /// Flag that determines if interrupts are enabled for various subsystems.
     pub interrupt_enabled: InterruptFlag,
     /// Flag that determines if interrupt handlers are requested for various subsystems.
@@ -136,11 +145,16 @@ pub struct Mmu {
 
 impl Mmu {
     /// Creates a new [`Mmu`].
-    pub fn new(mbc: Rc<RefCell<dyn Mbc>>, input: Rc<RefCell<Input>>) -> Self {
+    pub fn new(
+        mbc: Rc<RefCell<dyn Mbc>>,
+        input: Rc<RefCell<Input>>,
+        gpu: Rc<RefCell<Gpu>>,
+    ) -> Self {
         Self {
             mode: Mode::Boot,
             mbc,
             input,
+            gpu,
             interrupt_enabled: InterruptFlag::default(),
             interrupt_flag: InterruptFlag::default(),
         }
@@ -160,7 +174,10 @@ impl Mapper for Mmu {
                 _ => panic!("read invalid boot ROM address"),
             },
             Mode::Cartridge => match address {
-                0..=END_MBC_ADDRESS => self.mbc.borrow().read(address),
+                0..=END_MBC_ADDRESS => self.mbc.borrow().read_u8(address),
+                START_VRAM_ADDRESS..=END_VRAM_ADDRESS => {
+                    self.gpu.borrow().read_u8(address - START_VRAM_ADDRESS)
+                }
                 INPUT_ADDRESS => self.input.borrow().read(),
                 IE_ADDRESS => self.interrupt_enabled.into(),
                 IF_ADDRESS => self.interrupt_flag.into(),
@@ -181,7 +198,12 @@ impl Mapper for Mmu {
     /// Writes a single byte to memory at the given address.
     fn write_u8(&mut self, address: u16, byte: u8) {
         match address {
-            0..=END_MBC_ADDRESS => self.mbc.borrow_mut().write(address, byte),
+            0..=END_MBC_ADDRESS => self.mbc.borrow_mut().write_u8(address, byte),
+            START_VRAM_ADDRESS..=END_VRAM_ADDRESS => {
+                self.gpu
+                    .borrow_mut()
+                    .write_u8(address - START_VRAM_ADDRESS, byte);
+            }
             INPUT_ADDRESS => self.input.borrow_mut().write(byte),
             IE_ADDRESS => self.interrupt_enabled = byte.into(),
             IF_ADDRESS => self.interrupt_flag = byte.into(),
@@ -200,8 +222,9 @@ mod tests {
     fn create_mmu() -> Mmu {
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
         let input = Rc::new(RefCell::new(Input::new()));
+        let gpu = Rc::new(RefCell::new(Gpu::new()));
 
-        let mut mmu = Mmu::new(mbc, input);
+        let mut mmu = Mmu::new(mbc, input, gpu);
         mmu.mode = Mode::Cartridge;
 
         mmu

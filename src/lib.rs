@@ -1,5 +1,6 @@
 pub mod cart;
 pub mod cpu;
+pub mod gfx;
 pub mod input;
 pub mod mem;
 
@@ -10,6 +11,7 @@ use crate::{
     mem::Mmu,
 };
 
+use gfx::Gpu;
 use imgui::{Context, TreeNodeFlags, Ui};
 use imgui_glow_renderer::{
     glow::{self, HasContext},
@@ -45,6 +47,8 @@ pub struct Emulator {
     pub cartridge: Cartridge,
     /// [`Input`] that allows a user to give input to the emulator.
     pub input: Rc<RefCell<Input>>,
+    /// [`Gpu`] that draws the game to the screen.
+    pub gpu: Rc<RefCell<Gpu>>,
     /// Current debug mode of the emulator.
     pub debug_mode: DebugMode,
 }
@@ -53,16 +57,21 @@ impl Emulator {
     /// Creates a new [`Emulator`] which is capable of playing the specified [`Cartridge`].
     pub fn new(cartridge: Cartridge, debug_mode: DebugMode) -> Self {
         let cpu = Cpu::new();
+        let input = Rc::new(RefCell::new(Input::new()));
+        let gpu = Rc::new(RefCell::new(Gpu::new()));
 
-        let input: Rc<RefCell<Input>> = Rc::new(RefCell::new(Input::new()));
-
-        let mmu = Mmu::new(Rc::clone(&cartridge.mbc), Rc::clone(&input));
+        let mmu = Mmu::new(
+            Rc::clone(&cartridge.mbc),
+            Rc::clone(&input),
+            Rc::clone(&gpu),
+        );
 
         Self {
             cpu,
             mmu,
             cartridge,
             input,
+            gpu,
             debug_mode,
         }
     }
