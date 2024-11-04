@@ -88,6 +88,8 @@ impl Display for InterruptFlag {
     }
 }
 
+const END_MBC_ADDRESS: u16 = 0x7FFF;
+
 /// Memory address of the input controller.
 const INPUT_ADDRESS: u16 = 0xFF00;
 
@@ -125,7 +127,7 @@ pub struct Mmu {
     /// Memory bank controller from the [`Cartridge`].
     pub mbc: Rc<RefCell<dyn Mbc>>,
     /// [`Input`] that contains state of the GameBoy controller.
-    pub input: Rc<RefCell<dyn Input>>,
+    pub input: Rc<RefCell<Input>>,
     /// Flag that determines if interrupts are enabled for various subsystems.
     pub interrupt_enabled: InterruptFlag,
     /// Flag that determines if interrupt handlers are requested for various subsystems.
@@ -134,7 +136,7 @@ pub struct Mmu {
 
 impl Mmu {
     /// Creates a new [`Mmu`].
-    pub fn new(mbc: Rc<RefCell<dyn Mbc>>, input: Rc<RefCell<dyn Input>>) -> Self {
+    pub fn new(mbc: Rc<RefCell<dyn Mbc>>, input: Rc<RefCell<Input>>) -> Self {
         Self {
             mode: Mode::Boot,
             mbc,
@@ -158,7 +160,7 @@ impl Mapper for Mmu {
                 _ => panic!("read invalid boot ROM address"),
             },
             Mode::Cartridge => match address {
-                0..=0x7FFF => self.mbc.borrow().read(address),
+                0..=END_MBC_ADDRESS => self.mbc.borrow().read(address),
                 INPUT_ADDRESS => self.input.borrow().read(),
                 IE_ADDRESS => self.interrupt_enabled.into(),
                 IF_ADDRESS => self.interrupt_flag.into(),
@@ -179,7 +181,7 @@ impl Mapper for Mmu {
     /// Writes a single byte to memory at the given address.
     fn write_u8(&mut self, address: u16, byte: u8) {
         match address {
-            0..=0x7FFF => self.mbc.borrow_mut().write(address, byte),
+            0..=END_MBC_ADDRESS => self.mbc.borrow_mut().write(address, byte),
             INPUT_ADDRESS => self.input.borrow_mut().write(byte),
             IE_ADDRESS => self.interrupt_enabled = byte.into(),
             IF_ADDRESS => self.interrupt_flag = byte.into(),
@@ -195,20 +197,9 @@ mod tests {
 
     use crate::cart::RomOnly;
 
-    struct TestInput;
-
-    impl Input for TestInput {
-        fn button_down(&mut self, _button: crate::input::Button) {}
-        fn button_up(&mut self, _button: crate::input::Button) {}
-        fn write(&mut self, _byte: u8) {}
-        fn read(&self) -> u8 {
-            0
-        }
-    }
-
     fn create_mmu() -> Mmu {
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
-        let input = Rc::new(RefCell::new(TestInput));
+        let input = Rc::new(RefCell::new(Input::new()));
 
         let mut mmu = Mmu::new(mbc, input);
         mmu.mode = Mode::Cartridge;

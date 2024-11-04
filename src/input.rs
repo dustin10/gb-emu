@@ -63,30 +63,18 @@ pub enum ReadMode {
     Both,
 }
 
-/// The [`Input`] trait defines the behavior required to handle input for the GameBoy emulator.
-pub trait Input {
-    /// Marks the specified [`Button`] as being pressed.
-    fn button_down(&mut self, button: Button);
-    /// Marks the specified [`Button`] as being released.
-    fn button_up(&mut self, button: Button);
-    /// Returns the current state of the input as a byte.
-    fn read(&self) -> u8;
-    /// Writes the given byte back to the [`Input`] by updating the [`ReadMode`] based on the
-    /// values in the relevant bit positions.
-    fn write(&mut self, byte: u8);
-}
-
-/// Implementation of [`Input`] that represents the GameBoy joypad controller.
+/// The [`Input`] struct represents the GameBoy joypad and maintains the state of the buttons
+/// pressed by the user.
 #[derive(Debug)]
-pub struct Joypad {
+pub struct Input {
     /// Current state of the buttons based on user input.
     state: HashMap<Button, bool>,
     /// Current read mode. Used to construct the byte that represents the input state.
     mode: ReadMode,
 }
 
-impl Default for Joypad {
-    /// Creates a default [`Joypad`].
+impl Default for Input {
+    /// Creates a default [`Input`].
     fn default() -> Self {
         let state = HashMap::from([
             (Button::Up, false),
@@ -106,10 +94,47 @@ impl Default for Joypad {
     }
 }
 
-impl Joypad {
-    /// Creates a new default [`Joypad`].
+impl Input {
+    /// Creates a new default [`Input`].
     pub fn new() -> Self {
         Self::default()
+    }
+    /// Marks the specified [`Button`] as being pressed.
+    pub fn button_down(&mut self, button: Button) {
+        tracing::debug!("button down: {}", button);
+
+        let value = self.state.get_mut(&button).expect("key for button exists");
+        *value = true;
+    }
+    /// Marks the specified [`Button`] as being released.
+    pub fn button_up(&mut self, button: Button) {
+        tracing::debug!("button up: {}", button);
+
+        let value = self.state.get_mut(&button).expect("key for button exists");
+        *value = false;
+    }
+    /// Writes the given byte back to the [`Input`] by updating the [`ReadMode`] based on the
+    /// values in the relevant bit positions.
+    pub fn write(&mut self, byte: u8) {
+        let directions = byte & (1 << DIRECTIONS_BIT_POSITION) == 0;
+        let buttons = byte & (1 << BUTTONS_BIT_POSITION) == 0;
+
+        let mode = match (directions, buttons) {
+            (true, true) => ReadMode::Both,
+            (true, false) => ReadMode::Directions,
+            (false, true) => ReadMode::Buttons,
+            (false, false) => ReadMode::Neither,
+        };
+
+        self.mode = mode;
+    }
+    /// Reads the current state of the input and returns the byte representation.
+    pub fn read(&self) -> u8 {
+        match self.mode {
+            ReadMode::Neither | ReadMode::Both => 0x0F,
+            ReadMode::Buttons => self.buttons_state(),
+            ReadMode::Directions => self.directions_state(),
+        }
     }
     /// Returns the byte that represents the current state of the buttons.
     fn directions_state(&self) -> u8 {
@@ -173,52 +198,12 @@ impl Joypad {
     }
 }
 
-impl Input for Joypad {
-    /// Marks the specified [`Button`] as being pressed.
-    fn button_down(&mut self, button: Button) {
-        tracing::debug!("button down: {}", button);
-
-        let value = self.state.get_mut(&button).expect("key for button exists");
-        *value = true;
-    }
-    /// Marks the specified [`Button`] as being released.
-    fn button_up(&mut self, button: Button) {
-        tracing::debug!("button up: {}", button);
-
-        let value = self.state.get_mut(&button).expect("key for button exists");
-        *value = false;
-    }
-    /// Writes the given byte back to the [`Input`] by updating the [`ReadMode`] based on the
-    /// values in the relevant bit positions.
-    fn write(&mut self, byte: u8) {
-        let directions = byte & (1 << DIRECTIONS_BIT_POSITION) == 0;
-        let buttons = byte & (1 << BUTTONS_BIT_POSITION) == 0;
-
-        let mode = match (directions, buttons) {
-            (true, true) => ReadMode::Both,
-            (true, false) => ReadMode::Directions,
-            (false, true) => ReadMode::Buttons,
-            (false, false) => ReadMode::Neither,
-        };
-
-        self.mode = mode;
-    }
-    /// Reads the current state of the input and returns the byte representation.
-    fn read(&self) -> u8 {
-        match self.mode {
-            ReadMode::Neither | ReadMode::Both => 0x0F,
-            ReadMode::Buttons => self.buttons_state(),
-            ReadMode::Directions => self.directions_state(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_joypad_button_down() {
+    fn test_input_button_down() {
         let buttons = vec![
             Button::Up,
             Button::Down,
@@ -230,16 +215,16 @@ mod tests {
             Button::Select,
         ];
 
-        let mut joypad = Joypad::new();
+        let mut input = Input::new();
 
         buttons.into_iter().for_each(|b| {
-            joypad.button_down(b);
-            assert!(*joypad.state.get(&b).expect("key exists"));
+            input.button_down(b);
+            assert!(*input.state.get(&b).expect("key exists"));
         })
     }
 
     #[test]
-    fn test_joypad_button_up() {
+    fn test_input_button_up() {
         let buttons = vec![
             Button::Up,
             Button::Down,
@@ -251,84 +236,84 @@ mod tests {
             Button::Select,
         ];
 
-        let mut joypad = Joypad::new();
+        let mut input = Input::new();
 
         buttons.into_iter().for_each(|b| {
-            let value = joypad.state.get_mut(&b).expect("key exists");
+            let value = input.state.get_mut(&b).expect("key exists");
             *value = true;
 
-            joypad.button_up(b);
-            assert!(!*joypad.state.get(&b).expect("key exists"));
+            input.button_up(b);
+            assert!(!*input.state.get(&b).expect("key exists"));
         })
     }
 
     #[test]
-    fn test_joypad_read_neither() {
-        let mut joypad = Joypad::new();
-        joypad.write(0x30);
-        assert_eq!(0x0F, joypad.read());
+    fn test_input_read_neither() {
+        let mut input = Input::new();
+        input.write(0x30);
+        assert_eq!(0x0F, input.read());
     }
 
     #[test]
-    fn test_joypad_read_both() {
-        let mut joypad = Joypad::new();
-        joypad.write(0xF0);
-        assert_eq!(0x0F, joypad.read());
+    fn test_input_read_both() {
+        let mut input = Input::new();
+        input.write(0xF0);
+        assert_eq!(0x0F, input.read());
     }
 
     #[test]
-    fn test_joypad_read_directions() {
+    fn test_input_read_directions() {
         {
-            let mut joypad = Joypad::new();
-            joypad.write(1 << BUTTONS_BIT_POSITION);
-            joypad.button_down(Button::Right);
-            assert_eq!(0b00100001, joypad.read());
+            let mut input = Input::new();
+            input.write(1 << BUTTONS_BIT_POSITION);
+            input.button_down(Button::Right);
+            assert_eq!(0b00100001, input.read());
         }
         {
-            let mut joypad = Joypad::new();
-            joypad.write(1 << BUTTONS_BIT_POSITION);
-            joypad.button_down(Button::Left);
-            assert_eq!(0b00100010, joypad.read());
+            let mut input = Input::new();
+            input.write(1 << BUTTONS_BIT_POSITION);
+            input.button_down(Button::Left);
+            assert_eq!(0b00100010, input.read());
         }
         {
-            let mut joypad = Joypad::new();
-            joypad.write(1 << BUTTONS_BIT_POSITION);
-            joypad.button_down(Button::Up);
-            assert_eq!(0b00100100, joypad.read());
+            let mut input = Input::new();
+            input.write(1 << BUTTONS_BIT_POSITION);
+            input.button_down(Button::Up);
+            assert_eq!(0b00100100, input.read());
         }
         {
-            let mut joypad = Joypad::new();
-            joypad.write(1 << BUTTONS_BIT_POSITION);
-            joypad.button_down(Button::Down);
-            assert_eq!(0b00101000, joypad.read());
+            let mut input = Input::new();
+            input.write(1 << BUTTONS_BIT_POSITION);
+            input.button_down(Button::Down);
+            assert_eq!(0b00101000, input.read());
         }
     }
 
     #[test]
-    fn test_joypad_read_buttons() {
+    fn test_input_read_buttons() {
         {
-            let mut joypad = Joypad::new();
-            joypad.write(1 << DIRECTIONS_BIT_POSITION);
-            joypad.button_down(Button::A);
-            assert_eq!(0b00010001, joypad.read());
+            let mut input = Input::new();
+            input.write(1 << DIRECTIONS_BIT_POSITION);
+            input.button_down(Button::A);
+            assert_eq!(0b00010001, input.read());
         }
         {
-            let mut joypad = Joypad::new();
-            joypad.write(1 << DIRECTIONS_BIT_POSITION);
-            joypad.button_down(Button::B);
-            assert_eq!(0b00010010, joypad.read());
+            let mut input = Input::new();
+            input.write(1 << DIRECTIONS_BIT_POSITION);
+            input.button_down(Button::B);
+            assert_eq!(0b00010010, input.read());
         }
         {
-            let mut joypad = Joypad::new();
-            joypad.write(1 << DIRECTIONS_BIT_POSITION);
-            joypad.button_down(Button::Select);
-            assert_eq!(0b00010100, joypad.read());
+            let mut input = Input::new();
+            input.write(1 << DIRECTIONS_BIT_POSITION);
+            input.button_down(Button::Select);
+            assert_eq!(0b00010100, input.read());
         }
         {
-            let mut joypad = Joypad::new();
-            joypad.write(1 << DIRECTIONS_BIT_POSITION);
-            joypad.button_down(Button::Start);
-            assert_eq!(0b00011000, joypad.read());
+            let mut input = Input::new();
+            input.write(1 << DIRECTIONS_BIT_POSITION);
+            input.button_down(Button::Start);
+            assert_eq!(0b00011000, input.read());
         }
     }
 }

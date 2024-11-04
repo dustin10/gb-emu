@@ -6,7 +6,7 @@ pub mod mem;
 use crate::{
     cart::Cartridge,
     cpu::Cpu,
-    input::{Button, Input, Joypad},
+    input::{Button, Input},
     mem::Mmu,
 };
 
@@ -44,7 +44,7 @@ pub struct Emulator {
     /// [`Cartridge`] that is currently loaded into the emulator.
     pub cartridge: Cartridge,
     /// [`Input`] that allows a user to give input to the emulator.
-    pub input: Rc<RefCell<dyn Input>>,
+    pub input: Rc<RefCell<Input>>,
     /// Current debug mode of the emulator.
     pub debug_mode: DebugMode,
 }
@@ -54,7 +54,7 @@ impl Emulator {
     pub fn new(cartridge: Cartridge, debug_mode: DebugMode) -> Self {
         let cpu = Cpu::new();
 
-        let input: Rc<RefCell<dyn Input>> = Rc::new(RefCell::new(Joypad::new()));
+        let input: Rc<RefCell<Input>> = Rc::new(RefCell::new(Input::new()));
 
         let mmu = Mmu::new(Rc::clone(&cartridge.mbc), Rc::clone(&input));
 
@@ -536,7 +536,7 @@ impl Emulator {
                     ui.open_popup("key-bindings");
                 }
                 if let Some(key_binds_popup) = ui.begin_popup("key-bindings") {
-                    ui.text("Joypad");
+                    ui.text("Input");
                     ui.text("Up: W");
                     ui.text("Down: S");
                     ui.text("Left: A");
