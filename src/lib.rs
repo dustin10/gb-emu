@@ -184,27 +184,6 @@ impl Emulator {
             gl.use_program(Some(program));
         }
 
-        // for now just write color palette to the screen texture
-        let mut pixel_data = vec![u8::MAX; 640 * 576 * 3];
-        for row in 0..576 {
-            for col in 0..640 {
-                let (r, g, b) = if col < 160 {
-                    (155, 188, 15)
-                } else if col < 320 {
-                    (139, 172, 15)
-                } else if col < 480 {
-                    (48, 98, 48)
-                } else {
-                    (15, 56, 15)
-                };
-
-                let base = (3 * row * 640) + (col * 3);
-                pixel_data[base] = r;
-                pixel_data[base + 1] = g;
-                pixel_data[base + 2] = b;
-            }
-        }
-
         let texture = unsafe {
             let texture = gl.create_texture().expect("screen texture created");
 
@@ -221,18 +200,6 @@ impl Emulator {
                 glow::LINEAR as i32,
             );
 
-            gl.tex_image_2d(
-                glow::TEXTURE_2D,
-                0,
-                glow::RGB8 as i32,
-                640,
-                576,
-                0,
-                glow::RGB,
-                glow::UNSIGNED_BYTE,
-                Some(&pixel_data),
-            );
-
             texture
         };
 
@@ -240,6 +207,8 @@ impl Emulator {
             Err(msg) => anyhow::bail!(msg),
             Ok(event_pump) => event_pump,
         };
+
+        let mut texture_scroller: usize = 0;
 
         'main: loop {
             let ticks = match self.debug_mode {
@@ -363,13 +332,51 @@ impl Emulator {
 
             renderer.render(draw_data).expect("imgui ui rendered");
 
+            // for now just write color palette to the screen texture
+            let mut pixel_data = vec![u8::MAX; 640 * 576 * 3];
+            for row in 0..576 {
+                for col in 0..640 {
+                    let col_scroller = (col + texture_scroller) % 640;
+
+                    let (r, g, b) = if col_scroller < 160 {
+                        (155, 188, 15)
+                    } else if col_scroller < 320 {
+                        (139, 172, 15)
+                    } else if col_scroller < 480 {
+                        (48, 98, 48)
+                    } else {
+                        (15, 56, 15)
+                    };
+
+                    let base = (3 * row * 640) + (col * 3);
+                    pixel_data[base] = r;
+                    pixel_data[base + 1] = g;
+                    pixel_data[base + 2] = b;
+                }
+            }
+
             unsafe {
                 gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+
+                gl.tex_image_2d(
+                    glow::TEXTURE_2D,
+                    0,
+                    glow::RGB8 as i32,
+                    640,
+                    576,
+                    0,
+                    glow::RGB,
+                    glow::UNSIGNED_BYTE,
+                    Some(&pixel_data),
+                );
+
                 gl.bind_vertex_array(Some(vertex_array));
                 gl.draw_arrays(glow::TRIANGLES, 0, 6)
             }
 
             window.gl_swap_window();
+
+            texture_scroller = texture_scroller.wrapping_add(1);
         }
 
         tracing::debug!("destroying opengl resources");
