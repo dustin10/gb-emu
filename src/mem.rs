@@ -1,4 +1,9 @@
-use crate::{cart::Mbc, gfx::Gpu, input::Input};
+use crate::{
+    cart::Mbc,
+    gfx::Gpu,
+    input::{Input, INPUT_ADDRESS},
+    timer::Timer,
+};
 
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
@@ -91,9 +96,6 @@ impl Display for InterruptFlag {
 /// End of the addressable space for the MBC.
 const END_MBC_ADDRESS: u16 = 0x7FFF;
 
-/// Memory address of the input controller.
-const INPUT_ADDRESS: u16 = 0xFF00;
-
 /// Memory address of the Interrupt Enable (IE) flag.
 const IE_ADDRESS: u16 = 0xFFFF;
 
@@ -137,6 +139,8 @@ pub struct Mmu {
     pub input: Rc<RefCell<Input>>,
     /// [`Gpu`] that contains video memory.
     pub gpu: Rc<RefCell<Gpu>>,
+    /// [`Timer`] that manages the state of the timers and divider registers.
+    pub timer: Timer,
     /// Flag that determines if interrupts are enabled for various subsystems.
     pub interrupt_enabled: InterruptFlag,
     /// Flag that determines if interrupt handlers are requested for various subsystems.
@@ -155,6 +159,7 @@ impl Mmu {
             mbc,
             input,
             gpu,
+            timer: Timer::new(),
             interrupt_enabled: InterruptFlag::default(),
             interrupt_flag: InterruptFlag::default(),
         }
@@ -178,7 +183,7 @@ impl Mapper for Mmu {
                 START_VRAM_ADDRESS..=END_VRAM_ADDRESS => {
                     self.gpu.borrow().read_u8(address - START_VRAM_ADDRESS)
                 }
-                INPUT_ADDRESS => self.input.borrow().read(),
+                INPUT_ADDRESS => self.input.borrow().read_u8(address),
                 IE_ADDRESS => self.interrupt_enabled.into(),
                 IF_ADDRESS => self.interrupt_flag.into(),
                 BANK_REG_ADDRESS => {
@@ -204,7 +209,7 @@ impl Mapper for Mmu {
                     .borrow_mut()
                     .write_u8(address - START_VRAM_ADDRESS, byte);
             }
-            INPUT_ADDRESS => self.input.borrow_mut().write(byte),
+            INPUT_ADDRESS => self.input.borrow_mut().write_u8(address, byte),
             IE_ADDRESS => self.interrupt_enabled = byte.into(),
             IF_ADDRESS => self.interrupt_flag = byte.into(),
             BANK_REG_ADDRESS => self.mode = Mode::Cartridge,

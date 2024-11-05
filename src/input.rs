@@ -1,4 +1,9 @@
+use crate::mem::Mapper;
+
 use std::{collections::HashMap, fmt::Display};
+
+/// Memory address of the input controller.
+pub const INPUT_ADDRESS: u16 = 0xFF00;
 
 /// Bit position of the `A` button in the state byte.
 const A_BIT_POSITION: u8 = 0;
@@ -113,29 +118,6 @@ impl Input {
         let value = self.state.get_mut(&button).expect("key for button exists");
         *value = false;
     }
-    /// Writes the given byte back to the [`Input`] by updating the [`ReadMode`] based on the
-    /// values in the relevant bit positions.
-    pub fn write(&mut self, byte: u8) {
-        let directions = byte & (1 << DIRECTIONS_BIT_POSITION) == 0;
-        let buttons = byte & (1 << BUTTONS_BIT_POSITION) == 0;
-
-        let mode = match (directions, buttons) {
-            (true, true) => ReadMode::Both,
-            (true, false) => ReadMode::Directions,
-            (false, true) => ReadMode::Buttons,
-            (false, false) => ReadMode::Neither,
-        };
-
-        self.mode = mode;
-    }
-    /// Reads the current state of the input and returns the byte representation.
-    pub fn read(&self) -> u8 {
-        match self.mode {
-            ReadMode::Neither | ReadMode::Both => 0x0F,
-            ReadMode::Buttons => self.buttons_state(),
-            ReadMode::Directions => self.directions_state(),
-        }
-    }
     /// Returns the byte that represents the current state of the buttons.
     fn directions_state(&self) -> u8 {
         let mut s: u8 = 0b00101111;
@@ -198,6 +180,36 @@ impl Input {
     }
 }
 
+impl Mapper for Input {
+    /// Reads the current state of the input and returns the byte representation.
+    fn read_u8(&self, address: u16) -> u8 {
+        assert_eq!(INPUT_ADDRESS, address);
+
+        match self.mode {
+            ReadMode::Neither | ReadMode::Both => 0x0F,
+            ReadMode::Buttons => self.buttons_state(),
+            ReadMode::Directions => self.directions_state(),
+        }
+    }
+    /// Writes the given byte back to the [`Input`] by updating the [`ReadMode`] based on the
+    /// values in the relevant bit positions.
+    fn write_u8(&mut self, address: u16, byte: u8) {
+        assert_eq!(INPUT_ADDRESS, address);
+
+        let directions = byte & (1 << DIRECTIONS_BIT_POSITION) == 0;
+        let buttons = byte & (1 << BUTTONS_BIT_POSITION) == 0;
+
+        let mode = match (directions, buttons) {
+            (true, true) => ReadMode::Both,
+            (true, false) => ReadMode::Directions,
+            (false, true) => ReadMode::Buttons,
+            (false, false) => ReadMode::Neither,
+        };
+
+        self.mode = mode;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -250,42 +262,42 @@ mod tests {
     #[test]
     fn test_input_read_neither() {
         let mut input = Input::new();
-        input.write(0x30);
-        assert_eq!(0x0F, input.read());
+        input.write_u8(INPUT_ADDRESS, 0x30);
+        assert_eq!(0x0F, input.read_u8(INPUT_ADDRESS));
     }
 
     #[test]
     fn test_input_read_both() {
         let mut input = Input::new();
-        input.write(0xF0);
-        assert_eq!(0x0F, input.read());
+        input.write_u8(INPUT_ADDRESS, 0xF0);
+        assert_eq!(0x0F, input.read_u8(INPUT_ADDRESS));
     }
 
     #[test]
     fn test_input_read_directions() {
         {
             let mut input = Input::new();
-            input.write(1 << BUTTONS_BIT_POSITION);
+            input.write_u8(INPUT_ADDRESS, 1 << BUTTONS_BIT_POSITION);
             input.button_down(Button::Right);
-            assert_eq!(0b00100001, input.read());
+            assert_eq!(0b00100001, input.read_u8(INPUT_ADDRESS));
         }
         {
             let mut input = Input::new();
-            input.write(1 << BUTTONS_BIT_POSITION);
+            input.write_u8(INPUT_ADDRESS, 1 << BUTTONS_BIT_POSITION);
             input.button_down(Button::Left);
-            assert_eq!(0b00100010, input.read());
+            assert_eq!(0b00100010, input.read_u8(INPUT_ADDRESS));
         }
         {
             let mut input = Input::new();
-            input.write(1 << BUTTONS_BIT_POSITION);
+            input.write_u8(INPUT_ADDRESS, 1 << BUTTONS_BIT_POSITION);
             input.button_down(Button::Up);
-            assert_eq!(0b00100100, input.read());
+            assert_eq!(0b00100100, input.read_u8(INPUT_ADDRESS));
         }
         {
             let mut input = Input::new();
-            input.write(1 << BUTTONS_BIT_POSITION);
+            input.write_u8(INPUT_ADDRESS, 1 << BUTTONS_BIT_POSITION);
             input.button_down(Button::Down);
-            assert_eq!(0b00101000, input.read());
+            assert_eq!(0b00101000, input.read_u8(INPUT_ADDRESS));
         }
     }
 
@@ -293,27 +305,41 @@ mod tests {
     fn test_input_read_buttons() {
         {
             let mut input = Input::new();
-            input.write(1 << DIRECTIONS_BIT_POSITION);
+            input.write_u8(INPUT_ADDRESS, 1 << DIRECTIONS_BIT_POSITION);
             input.button_down(Button::A);
-            assert_eq!(0b00010001, input.read());
+            assert_eq!(0b00010001, input.read_u8(INPUT_ADDRESS));
         }
         {
             let mut input = Input::new();
-            input.write(1 << DIRECTIONS_BIT_POSITION);
+            input.write_u8(INPUT_ADDRESS, 1 << DIRECTIONS_BIT_POSITION);
             input.button_down(Button::B);
-            assert_eq!(0b00010010, input.read());
+            assert_eq!(0b00010010, input.read_u8(INPUT_ADDRESS));
         }
         {
             let mut input = Input::new();
-            input.write(1 << DIRECTIONS_BIT_POSITION);
+            input.write_u8(INPUT_ADDRESS, 1 << DIRECTIONS_BIT_POSITION);
             input.button_down(Button::Select);
-            assert_eq!(0b00010100, input.read());
+            assert_eq!(0b00010100, input.read_u8(INPUT_ADDRESS));
         }
         {
             let mut input = Input::new();
-            input.write(1 << DIRECTIONS_BIT_POSITION);
+            input.write_u8(INPUT_ADDRESS, 1 << DIRECTIONS_BIT_POSITION);
             input.button_down(Button::Start);
-            assert_eq!(0b00011000, input.read());
+            assert_eq!(0b00011000, input.read_u8(INPUT_ADDRESS));
         }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_input_read_wrong_address() {
+        let input = Input::new();
+        input.read_u8(0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_input_write_wrong_address() {
+        let mut input = Input::new();
+        input.write_u8(0, 1 << DIRECTIONS_BIT_POSITION);
     }
 }

@@ -3,6 +3,7 @@ pub mod cpu;
 pub mod gfx;
 pub mod input;
 pub mod mem;
+pub mod timer;
 
 use crate::{
     cart::Cartridge,
@@ -407,7 +408,7 @@ impl Emulator {
                     self.cartridge.header.licensee_code()
                 ));
                 ui.text(format!("Version: {}", self.cartridge.header.version));
-                ui.text(format!("Type: {}", self.cartridge.header.cartridge_type));
+                ui.text(format!("Type: {}", self.cartridge.header.kind));
                 ui.separator();
                 if let Some(checksums_table) = ui.begin_table_header(
                     "checksums_table",

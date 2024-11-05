@@ -3314,7 +3314,7 @@ impl Cpu {
                 self.registers.f.set_h(false);
                 self.registers.f.set_c(will_carry);
             }
-            Operation::STOP => tracing::debug!("ignore stop instruction"),
+            Operation::STOP => {}
             Operation::SUBA { target } => {
                 let a = self.registers.a;
 
@@ -3473,7 +3473,7 @@ fn will_half_carry_sub_u8(a: u8, b: u8) -> bool {
 mod tests {
     use super::*;
 
-    use crate::cart::{Mbc, RomOnly};
+    use crate::cart::RomOnly;
 
     struct TestMapper {
         inner: RomOnly,
@@ -3565,7 +3565,7 @@ mod tests {
 mod json_tests {
     use super::*;
 
-    use crate::cart::{Mbc, RomOnly};
+    use crate::cart::RomOnly;
 
     use serde::Deserialize;
     use std::path::Path;

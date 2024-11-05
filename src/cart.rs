@@ -1,3 +1,5 @@
+use crate::mem::Mapper;
+
 use anyhow::Context;
 use std::{cell::RefCell, fmt::Display, path::Path, rc::Rc};
 
@@ -78,16 +80,16 @@ const COMPUTE_HEADER_CHECKSUM_START: usize = 0x0134;
 const COMPUTE_HEADER_CHECKSUM_END: usize = 0x014D;
 
 /// Enumerates various types of GameBoy cartridges supported by the emulator.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum CartridgeType {
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum CartridgeKind {
     /// No mapping required.
     RomOnly,
     /// Type 1 memory bank controller.
     MBC1 { ram: bool, battery: bool },
 }
 
-impl From<u8> for CartridgeType {
-    /// Creates the appropraite [`CartridgeType`] that maps to the given [`u8`] which represents
+impl From<u8> for CartridgeKind {
+    /// Creates the appropraite [`CartridgeKind`] that maps to the given [`u8`] which represents
     /// the memory bank controller that a [`crate::cartridge::Cartridge`] requires. This value is
     /// read from the cartridge header.
     ///
@@ -97,16 +99,16 @@ impl From<u8> for CartridgeType {
     /// implemented.
     fn from(value: u8) -> Self {
         match value {
-            0x00 => CartridgeType::RomOnly,
-            0x01 => CartridgeType::MBC1 {
+            0x00 => CartridgeKind::RomOnly,
+            0x01 => CartridgeKind::MBC1 {
                 ram: true,
                 battery: true,
             },
-            0x02 => CartridgeType::MBC1 {
+            0x02 => CartridgeKind::MBC1 {
                 ram: true,
                 battery: false,
             },
-            0x03 => CartridgeType::MBC1 {
+            0x03 => CartridgeKind::MBC1 {
                 ram: true,
                 battery: true,
             },
@@ -115,12 +117,12 @@ impl From<u8> for CartridgeType {
     }
 }
 
-impl Display for CartridgeType {
-    /// Writes a string representation of the [`CartridgeType`] to the formatter.
+impl Display for CartridgeKind {
+    /// Writes a string representation of the [`CartridgeKind`] to the formatter.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CartridgeType::RomOnly => f.write_str("ROM Only"),
-            CartridgeType::MBC1 { ram, battery } => {
+            CartridgeKind::RomOnly => f.write_str("ROM Only"),
+            CartridgeKind::MBC1 { ram, battery } => {
                 f.write_fmt(format_args!("MBC1 RAM:{} Battery:{}", ram, battery))
             }
         }
@@ -129,11 +131,7 @@ impl Display for CartridgeType {
 
 /// The [`Mbc`] trait defines the common behavior required for the various memory bank controllers
 /// that can exist on a GameBoy cartridge.
-pub trait Mbc {
-    /// Reads a single byte from memory at the given address.
-    fn read_u8(&self, address: u16) -> u8;
-    /// Writes a single byte to memory at the given address.
-    fn write_u8(&mut self, address: u16, byte: u8);
+pub trait Mbc: Mapper {
     /// Writes a block of bytes to memory at the given start address.
     fn write_block(&mut self, start_addr: u16, bytes: &[u8]);
 }
@@ -153,7 +151,7 @@ impl RomOnly {
     }
 }
 
-impl Mbc for RomOnly {
+impl Mapper for RomOnly {
     /// Reads a single byte from memory at the given address.
     fn read_u8(&self, address: u16) -> u8 {
         self.data[address as usize]
@@ -162,6 +160,9 @@ impl Mbc for RomOnly {
     fn write_u8(&mut self, address: u16, byte: u8) {
         self.data[address as usize] = byte;
     }
+}
+
+impl Mbc for RomOnly {
     /// Writes a block of bytes to memory at the given start address.
     fn write_block(&mut self, start_addr: u16, bytes: &[u8]) {
         let num_bytes = bytes.len();
@@ -182,7 +183,7 @@ impl Default for RomOnly {
 }
 
 /// Holds the data that makes up the header of the [`Cartridge`]. The header contains data such as
-/// the [`CartridgeType`], the title of the game, the company that made it, etc.
+/// the [`CartridgeKind`], the title of the game, the company that made it, etc.
 #[derive(Debug)]
 pub struct Header {
     /// Byte array containing the Nintendo logo that is displayed when the GameBoy is turned on. If
@@ -196,7 +197,7 @@ pub struct Header {
     pub manufacturer_code: String,
     /// Indicates what kind of hardware is present on the cartridge including the memory bank
     /// controller implementation.
-    pub cartridge_type: CartridgeType,
+    pub kind: CartridgeKind,
     /// Indicates how much ROM is present on the cartridge. In most cases, the ROM size is given by
     /// 32 KiB × (1 << <value>).
     pub rom_size: u8,
@@ -256,10 +257,10 @@ impl Header {
         let new_licensee_code: u16 = (data[NEW_LICENSEE_CODE_HIGH_ADDR] as u16)
             | ((data[NEW_LICENSEE_CODE_LOW_ADDR] as u16) >> 8);
 
-        let cartridge_type = data[TYPE_ADDR].into();
+        let kind = data[TYPE_ADDR].into();
 
-        let ram_size = match cartridge_type {
-            CartridgeType::MBC1 { ram, .. } if ram => 0,
+        let ram_size = match kind {
+            CartridgeKind::MBC1 { ram, .. } if ram => 0,
             _ => data[RAM_SIZE_ADDR],
         };
 
@@ -293,7 +294,7 @@ impl Header {
             cgb_flag: data[CGB_FLAG_ADDR],
             new_licensee_code,
             sgb_flag: data[SGB_FLAG_ADDR],
-            cartridge_type,
+            kind,
             rom_size: data[ROM_SIZE_ADDR],
             ram_size,
             destination: data[DESTINATION_ADDR],
@@ -364,9 +365,9 @@ impl Cartridge {
 
         let header = Header::parse_and_validate(&data)?;
 
-        let mut mbc = match header.cartridge_type {
-            CartridgeType::RomOnly => RomOnly::new(),
-            _ => anyhow::bail!("unsupported cartridge type: {}", header.cartridge_type),
+        let mut mbc = match header.kind {
+            CartridgeKind::RomOnly => RomOnly::new(),
+            _ => anyhow::bail!("unsupported cartridge type: {}", header.kind),
         };
 
         mbc.write_block(CARTRIDGE_START_ADDR, &data);
