@@ -33,11 +33,11 @@ pub enum DebugMode {
     Disabled,
     /// Game execution is paused, the cpu does not step forward.
     Pause,
-    /// Game execution will will take one step forward and pause afterwards.
+    /// Game execution will take one step forward and pause afterward.
     Step,
 }
 
-/// The [`Emulator`] struct is the container that is responsible for managing all of the subsystems
+/// The [`Emulator`] struct is the container that is responsible for managing all the subsystems
 /// required to emulate the Game Boy and play a game cartridge.
 pub struct Emulator {
     /// [`Cpu`] that is responsible for reading, decoding and executing instructions.

@@ -58,7 +58,7 @@ impl Display for Button {
 /// Enumerates the valid read modes.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ReadMode {
-    /// Neither reading of directions or buttons is allowed.
+    /// Neither reading of directions nor buttons is allowed.
     Neither,
     /// Only reading of buttons is allowed.
     Buttons,

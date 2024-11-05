@@ -116,7 +116,7 @@ impl Flags {
     pub fn n(&self) -> bool {
         (self.0 >> FLAGS_SUBTRACT_BIT_POSITION) & 1 != 0
     }
-    /// Sets the status of the substract flag.
+    /// Sets the status of the subtract flag.
     pub fn set_n(&mut self, on: bool) {
         self.set_flag(FLAGS_SUBTRACT_BIT_POSITION, on);
     }
@@ -338,14 +338,14 @@ pub enum Operation {
     /// Toggles the value of the carry flag.
     CCF,
     /// Compares the contents of the [`Target8Bit`] register and the contents of `A` register by
-    /// subtracing the two values and set the Z flag if they are equal. The execution of this
+    /// subtracting the two values and set the Z flag if they are equal. The execution of this
     /// instruction does not affect the contents of the `A` register.
     CPA { target: Target8Bit },
     /// Compares the contents of the value in memory pointed to by the [`HL`] register and the
-    /// contents of `A` register by subtracing the two values and set the Z flag if they are equal.
+    /// contents of `A` register by subtracting the two values and set the Z flag if they are equal.
     /// The execution of this instruction does not affect the contents of the `A` register.
     CPAMEM,
-    /// Compares the contents of the value and the contents of `A` register by subtracing the two
+    /// Compares the contents of the value and the contents of `A` register by subtracting the two
     /// values and set the Z flag if they are equal. The execution of this instruction does not
     /// affect the contents of the `A` register.
     CPAU8 { value: u8 },
@@ -517,17 +517,18 @@ pub enum Operation {
     /// Bit rotate the value in memory at the address pointed to by the value in the `HL` register
     /// right by one, not through the carry flag.
     RRCHL,
-    /// Pushes the current value of the program counter PC onto the memory stack, and load into PC the
-    /// byte defined by the value of page 0 memory addresses.
+    /// Pushes the current value of the program counter PC onto the memory stack, and load into PC
+    /// the byte defined by the value of page 0 memory addresses.
     RST { value: u8 },
     /// Subtracts the value in the [`Target8Bit`] register and the value of the carry flag from
     /// the value in the `A` register and stores the result back to the `A` register.
     SBCA { target: Target8Bit },
-    /// Subtracts the value at the memory address pointed to by the value in the `HL` register and the
-    /// carry flag from the value in the `A` register and stores the result back to the `A` register.
+    /// Subtracts the value at the memory address pointed to by the value in the `HL` register and
+    /// the carry flag from the value in the `A` register and stores the result back to the `A`
+    /// register.
     SBCAMEM,
-    /// Subtracts the `u8` value and the value of the carry flag from the value in the `A` register and
-    /// stores the result back to the `A` register.
+    /// Subtracts the `u8` value and the value of the carry flag from the value in the `A` register
+    /// and stores the result back to the `A` register.
     SBCAU8 { value: u8 },
     /// Sets the carry flag.
     SCF,
@@ -557,8 +558,8 @@ pub enum Operation {
     /// Subtracts the value at the memory address pointed to by the value in the `HL` register
     /// from the value in the `A` register and stores the result back to the `A` register.
     SUBAMEM,
-    /// Subtracts the `u8` from the value in the `A` register and stores the result back into the `A`
-    /// register.
+    /// Subtracts the `u8` from the value in the `A` register and stores the result back into the
+    /// `A` register.
     SUBAU8 { value: u8 },
     /// Swaps the high and low nibbles of the value in the [`Target8Bit`] register.
     SWAP { target: Target8Bit },
@@ -822,20 +823,20 @@ impl Instruction {
         Self::new(1, 4, Operation::CCF)
     }
     /// Creates a new instruction that compares the contents of the [`Target8Bit`] register and
-    /// the contents of `A` register by subtracing the two values and set the Z flag if they are
+    /// the contents of `A` register by subtracting the two values and set the Z flag if they are
     /// equal. The execution of this instruction does not affect the contents of the `A` register.
     fn cp_a(target: Target8Bit) -> Self {
         Self::new(1, 4, Operation::CPA { target })
     }
     /// Creates a new instruction that compares the contents of the value in memory pointed to by
-    /// the [`HL`] register and the contents of `A` register by subtracing the two values and set
+    /// the [`HL`] register and the contents of `A` register by subtracting the two values and set
     /// the Z flag if they are equal. The execution of this instruction does not affect the contents
     /// of the `A` register.
     fn cp_a_mem() -> Self {
         Self::new(1, 8, Operation::CPAMEM)
     }
     /// Creates a new instruction that compares the contents of the value and the contents of
-    /// `A` register by subtracing the two values and set the Z flag if they are equal. The
+    /// `A` register by subtracting the two values and set the Z flag if they are equal. The
     /// execution of this instruction does not affect the contents of the `A` register.
     fn cp_a_u8(value: u8) -> Self {
         Self::new(2, 8, Operation::CPAU8 { value })
@@ -2098,8 +2099,8 @@ impl Cpu {
             0xFF => Some(Instruction::set(7, Target8Bit::A)),
         }
     }
-    /// Executes the given [`Instruction`] returning the new program counter value and whether or
-    /// not the op code for the next instruction is prefixed.
+    /// Executes the given [`Instruction`] returning the new program counter value and whether
+    /// the op code for the next instruction is prefixed.
     fn execute(&mut self, instruction: &Instruction, memory: &mut dyn Mapper) {
         tracing::debug!("execute instruction '{}'", instruction);
 
@@ -3453,18 +3454,18 @@ impl Cpu {
     }
 }
 
-/// Detrmines if the addtion of `b` to `a` will cause a half-carry.
+/// Determines if the addition of `b` to `a` will cause a half-carry.
 fn will_half_carry_add_u8(a: u8, b: u8) -> bool {
     (a & 0x0F) + (b & 0x0F) > 0x0F
 }
 
-/// Detrmines if the addtion of `b` to `a` will cause a half-carry. The half carry is calculated on
-/// the 11th bit.
+/// Determines if the addition of `b` to `a` will cause a half-carry. The half carry is calculated
+/// on the 11th bit.
 fn will_half_carry_add_u16(a: u16, b: u16) -> bool {
     (a & 0x0FFF) + (b & 0x0FFF) > 0x0FFF
 }
 
-/// Detrmines if the subtraction of `b` from `a` will cause a half-carry.
+/// Determines if the subtraction of `b` from `a` will cause a half-carry.
 fn will_half_carry_sub_u8(a: u8, b: u8) -> bool {
     (((a & 0x0F) as i32) - ((b & 0x0F) as i32)) < 0
 }
@@ -3632,12 +3633,12 @@ mod json_tests {
         serde_json::from_str(&json).map_err(|e| e.into())
     }
 
-    /// Loads, deseralizes and executes all of the tests in the JSON file.
+    /// Loads, deserializes and executes all of the tests in the JSON file.
     ///
     /// # Panic
     ///
     /// This function will panic if the JSON file cannot be read or if it cannot be successfully
-    /// deserialzied into a [`Vec`] of [`Test`].
+    /// deserialized into a [`Vec`] of [`Test`].
     fn test_json_file(file_name: &str, instruction_set: InstructionSet) {
         read_json_file(file_name)
             .and_then(deserialize_json)

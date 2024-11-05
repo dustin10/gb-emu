@@ -89,7 +89,7 @@ pub enum CartridgeKind {
 }
 
 impl From<u8> for CartridgeKind {
-    /// Creates the appropraite [`CartridgeKind`] that maps to the given [`u8`] which represents
+    /// Creates the appropriate [`CartridgeKind`] that maps to the given [`u8`] which represents
     /// the memory bank controller that a [`crate::cartridge::Cartridge`] requires. This value is
     /// read from the cartridge header.
     ///
@@ -201,10 +201,11 @@ pub struct Header {
     /// Indicates how much ROM is present on the cartridge. In most cases, the ROM size is given by
     /// 32 KiB × (1 << <value>).
     pub rom_size: u8,
-    /// Indicates how much RAM is present on the cartridge, if any. If the cartridge type does not include
-    /// “RAM” in its name, this should be set to 0.
+    /// Indicates how much RAM is present on the cartridge, if any. If the cartridge type does not
+    /// include “RAM” in its name, this should be set to 0.
     pub ram_size: u8,
-    /// This byte specifies whether this version of the game is intended to be sold in Japan or elsewhere.
+    /// This byte specifies whether this version of the game is intended to be sold in Japan or
+    /// elsewhere.
     pub destination: u8,
     /// Specifies the version number of the game. It is usually 0x00.
     pub version: u8,
@@ -217,15 +218,15 @@ pub struct Header {
     pub expected_global_checksum: u16,
     /// Contains the computed global checksum.
     pub computed_global_checksum: u16,
-    /// A two-character ASCII “licensee code” indicating the game’s publisher. It is only meaningful if
-    /// the old licensee code is 0x33.
+    /// A two-character ASCII “licensee code” indicating the game’s publisher. It is only meaningful
+    /// if the old licensee code is 0x33.
     pub new_licensee_code: u16,
     /// Used in older (pre-SGB) cartridges to specify the game’s publisher. However, the value 0x33
     /// indicates that the new licensee codes must be considered instead.
     pub old_licensee_code: u8,
-    /// In older cartridges this byte was part of the title. The CGB and later models interpret this byte
-    /// to decide whether to enable Color mode (“CGB Mode”) or to fall back to monochrome compatibility
-    /// mode (“Non-CGB Mode”).
+    /// In older cartridges this byte was part of the title. The CGB and later models interpret this
+    /// byte to decide whether to enable Color mode (“CGB Mode”) or to fall back to monochrome
+    /// compatibility mode (“Non-CGB Mode”).
     pub cgb_flag: u8,
     /// Specifies whether the game supports SGB functions.
     pub sgb_flag: u8,
@@ -341,7 +342,7 @@ impl Header {
 
 /// The [`Cartridge`] struct represents a game cartridge which is loaded into the Game Boy.
 pub struct Cartridge {
-    /// Name of the game catridge.
+    /// Name of the game cartridge.
     pub name: String,
     /// Header data of the game cartridge.
     pub header: Header,
