@@ -128,6 +128,15 @@ pub enum Mode {
     Cartridge,
 }
 
+impl From<Mode> for u8 {
+    fn from(value: Mode) -> Self {
+        match value {
+            Mode::Boot => 0,
+            _ => 1,
+        }
+    }
+}
+
 /// The memory map unit which is responsible for reading and writing the various types of memory
 /// available on the GameBoy.
 pub struct Mmu {
@@ -186,13 +195,7 @@ impl Mapper for Mmu {
                 INPUT_ADDRESS => self.input.borrow().read_u8(address),
                 IE_ADDRESS => self.interrupt_enabled.into(),
                 IF_ADDRESS => self.interrupt_flag.into(),
-                BANK_REG_ADDRESS => {
-                    if self.mode == Mode::Boot {
-                        0
-                    } else {
-                        1
-                    }
-                }
+                BANK_REG_ADDRESS => self.mode.into(),
                 _ => {
                     tracing::warn!("read from unmapped address: {:4x}", address);
                     0
