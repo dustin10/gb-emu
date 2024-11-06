@@ -335,7 +335,7 @@ impl Header {
 
             format!("{} (New)", code)
         } else {
-            format!("{:2x}", self.old_licensee_code).to_uppercase()
+            format!("{}", self.old_licensee_code).to_uppercase()
         }
     }
 }

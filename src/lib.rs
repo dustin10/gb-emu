@@ -402,14 +402,40 @@ impl Emulator {
             .begin()
         {
             if ui.collapsing_header("Cartridge", TreeNodeFlags::DEFAULT_OPEN) {
-                ui.text(format!("Title: {}", self.cartridge.header.title));
-                ui.text(format!(
-                    "Licensee Code: {}",
-                    self.cartridge.header.licensee_code()
-                ));
-                ui.text(format!("Version: {}", self.cartridge.header.version));
-                ui.text(format!("Type: {}", self.cartridge.header.kind));
-                ui.separator();
+                if let Some(cartridge_table) = ui.begin_table_header(
+                    "cartridge_table",
+                    [
+                        TableColumnSetup::new("Property"),
+                        TableColumnSetup::new("Value"),
+                    ],
+                ) {
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text("Title");
+                    ui.table_next_column();
+                    ui.text(format!("{}", self.cartridge.header.title));
+
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text("Licensee Code");
+                    ui.table_next_column();
+                    ui.text(format!("{}", self.cartridge.header.licensee_code()));
+
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text("Version");
+                    ui.table_next_column();
+                    ui.text(format!("{}", self.cartridge.header.version));
+
+                    ui.table_next_row();
+                    ui.table_next_column();
+                    ui.text("Type");
+                    ui.table_next_column();
+                    ui.text(format!("{}", self.cartridge.header.kind));
+
+                    cartridge_table.end();
+                }
+
                 if let Some(checksums_table) = ui.begin_table_header(
                     "checksums_table",
                     [
