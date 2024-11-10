@@ -29,8 +29,11 @@ const _START_INSTRUCTION: u16 = 0x0100;
 /// Enumerates the different states that the emulator can be in when using the debug functionality.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DebugMode {
-    /// Debugging is disabled, game runs as normal.
+    /// Debugging is disabled, game runs as normal with no debugging information drawn on the
+    /// window.
     Disabled,
+    /// Game execution is running as normal with debugging information draw on the window.
+    Continue,
     /// Game execution is paused, the cpu does not step forward.
     Pause,
     /// Game execution will take one step forward and pause afterward.
@@ -101,8 +104,14 @@ impl Emulator {
             self.cartridge.header.title, self.cartridge.name
         );
 
+        let (width, height) = if self.debug_mode == DebugMode::Disabled {
+            (640, 576)
+        } else {
+            (1280, 576)
+        };
+
         let window = match video_subsystem
-            .window(&window_title, 1280, 576)
+            .window(&window_title, width, height)
             .allow_highdpi()
             .opengl()
             .position_centered()
@@ -171,6 +180,8 @@ impl Emulator {
             compiled_shaders.push(shader);
         }
 
+        let debugging = self.debug_mode != DebugMode::Disabled;
+
         unsafe {
             gl.link_program(program);
             if !gl.get_program_link_status(program) {
@@ -183,6 +194,11 @@ impl Emulator {
             }
 
             gl.use_program(Some(program));
+
+            gl.uniform_1_i32(
+                gl.get_uniform_location(program, "debug").as_ref(),
+                if debugging { 1 } else { 0 },
+            );
         }
 
         let texture = unsafe {
@@ -213,7 +229,7 @@ impl Emulator {
 
         'main: loop {
             let ticks = match self.debug_mode {
-                DebugMode::Disabled => self.cpu.step(&mut self.mmu),
+                DebugMode::Disabled | DebugMode::Continue => self.cpu.step(&mut self.mmu),
                 DebugMode::Pause => 0,
                 DebugMode::Step => {
                     self.debug_mode = DebugMode::Pause;
@@ -308,30 +324,44 @@ impl Emulator {
                     Event::KeyUp {
                         keycode: Some(Keycode::P),
                         ..
-                    } => self.debug_mode = DebugMode::Pause,
+                    } => {
+                        if self.debug_mode != DebugMode::Disabled {
+                            self.debug_mode = DebugMode::Pause;
+                        }
+                    }
                     Event::KeyUp {
                         keycode: Some(Keycode::N),
                         ..
-                    } => self.debug_mode = DebugMode::Step,
+                    } => {
+                        if self.debug_mode != DebugMode::Disabled {
+                            self.debug_mode = DebugMode::Step;
+                        }
+                    }
                     Event::KeyUp {
                         keycode: Some(Keycode::C),
                         ..
-                    } => self.debug_mode = DebugMode::Disabled,
+                    } => {
+                        if self.debug_mode != DebugMode::Disabled {
+                            self.debug_mode = DebugMode::Continue;
+                        }
+                    }
 
                     // not mapped
                     _ => {}
                 }
             }
 
-            platform.prepare_frame(&mut imgui, &window, &event_pump);
-
-            self.render_imgui(imgui.new_frame());
-
-            let draw_data = imgui.render();
-
             unsafe { gl.clear(glow::COLOR_BUFFER_BIT) };
 
-            renderer.render(draw_data).expect("imgui ui rendered");
+            if debugging {
+                platform.prepare_frame(&mut imgui, &window, &event_pump);
+
+                self.render_imgui(imgui.new_frame());
+
+                let draw_data = imgui.render();
+
+                renderer.render(draw_data).expect("imgui ui rendered");
+            }
 
             // for now just write color palette to the screen texture
             let mut pixel_data = vec![u8::MAX; 640 * 576 * 3];
@@ -651,7 +681,19 @@ impl Emulator {
 const VERTEX_SHADER_SOURCE: &str = r#"
 #version 330 core
 
+uniform bool debug;
+
 const vec2 verts[6] = vec2[6](
+    vec2(-1.0f, -1.0f),
+    vec2(-1.0f, 1.0f),
+    vec2(1.0f, 1.0f),
+
+    vec2(1.0f, 1.0f),
+    vec2(1.0f, -1.0f),
+    vec2(-1.0f, -1.0f)
+);
+
+const vec2 debug_verts[6] = vec2[6](
     vec2(-0.5f, -1.0f),
     vec2(-0.5f, 1.0f),
     vec2(0.5f, 1.0f),
@@ -674,8 +716,13 @@ const vec2 tex_coords[6] = vec2[6](
 out vec2 tex_coord;
 
 void main() {
+    if (debug) {
+        gl_Position = vec4(debug_verts[gl_VertexID], 0.0, 1.0);
+    } else {
+        gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0);
+    }
+
     tex_coord = tex_coords[gl_VertexID];
-    gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0);
 }
 "#;
 
