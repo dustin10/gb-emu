@@ -28,8 +28,11 @@ struct Args {
 
 /// Main entry point into the emulator application.
 fn main() -> anyhow::Result<()> {
+    let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
+
     // Default to INFO logs but allow the RUST_LOG env variable to override.
     tracing_subscriber::fmt()
+        .with_writer(non_blocking)
         .pretty()
         .with_level(true)
         .with_target(true)

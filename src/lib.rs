@@ -107,7 +107,7 @@ impl Emulator {
         let (width, height) = if self.debug_mode == DebugMode::Disabled {
             (640, 576)
         } else {
-            (1280, 576)
+            (1280, 896)
         };
 
         let window = match video_subsystem
@@ -443,13 +443,13 @@ impl Emulator {
                     ui.table_next_column();
                     ui.text("Title");
                     ui.table_next_column();
-                    ui.text(format!("{}", self.cartridge.header.title));
+                    ui.text(&self.cartridge.header.title);
 
                     ui.table_next_row();
                     ui.table_next_column();
                     ui.text("Licensee Code");
                     ui.table_next_column();
-                    ui.text(format!("{}", self.cartridge.header.licensee_code()));
+                    ui.text(self.cartridge.header.licensee_code());
 
                     ui.table_next_row();
                     ui.table_next_column();
@@ -673,6 +673,20 @@ impl Emulator {
 
             right_panel_win_token.end();
         }
+
+        if let Some(bottom_panel_win_token) = ui
+            .window("Bottom Panel")
+            .no_decoration()
+            .size([1280.0, 320.0], imgui::Condition::FirstUseEver)
+            .position([0.0, 576.0], imgui::Condition::FirstUseEver)
+            .begin()
+        {
+            if ui.collapsing_header("Logs", TreeNodeFlags::DEFAULT_OPEN | TreeNodeFlags::LEAF) {
+                ui.text("logs");
+            }
+
+            bottom_panel_win_token.end();
+        }
     }
 }
 
@@ -694,13 +708,13 @@ const vec2 verts[6] = vec2[6](
 );
 
 const vec2 debug_verts[6] = vec2[6](
-    vec2(-0.5f, -1.0f),
+    vec2(-0.5f, -0.285f),
     vec2(-0.5f, 1.0f),
     vec2(0.5f, 1.0f),
 
-    vec2(0.5f, 1.0f),
-    vec2(0.5f, -1.0f),
-    vec2(-0.5f, -1.0f)
+    vec2(0.5f, 1.0),
+    vec2(0.5f, -0.285f),
+    vec2(-0.5f, -0.285f)
 );
 
 const vec2 tex_coords[6] = vec2[6](

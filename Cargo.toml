@@ -19,6 +19,7 @@ imgui-glow-renderer = "0.13.0"
 imgui-sdl2-support = "0.13.0"
 sdl2 = "0.37.0"
 tracing = { version = "0.1.40", features = ["log"] }
+tracing-appender = "0.2.3"
 tracing-subscriber = { version = "0.3.18", features = ["json", "env-filter"] }
 
 [dev-dependencies]
