@@ -4,6 +4,7 @@ pub mod gfx;
 pub mod input;
 pub mod mem;
 pub mod timer;
+pub mod util;
 
 use crate::{
     cart::Cartridge,
@@ -12,6 +13,7 @@ use crate::{
     mem::Mmu,
 };
 
+use bounded_vec_deque::BoundedVecDeque;
 use gfx::Gpu;
 use imgui::{Context, TableColumnSetup, TreeNodeFlags, Ui};
 use imgui_glow_renderer::{
@@ -20,7 +22,11 @@ use imgui_glow_renderer::{
 };
 use imgui_sdl2_support::SdlPlatform;
 use sdl2::{event::Event, keyboard::Keycode, video::Window};
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
 /// Contains the memory address the program counter should be set to after the boot screen is
 /// displayed in order to start executing the cartridge instructions.
@@ -55,11 +61,17 @@ pub struct Emulator {
     pub gpu: Rc<RefCell<Gpu>>,
     /// Current debug mode of the emulator.
     pub debug_mode: DebugMode,
+    /// Logs to display in the debug UI if enabled.
+    pub logs: Arc<Mutex<BoundedVecDeque<String>>>,
 }
 
 impl Emulator {
     /// Creates a new [`Emulator`] which is capable of playing the specified [`Cartridge`].
-    pub fn new(cartridge: Cartridge, debug_mode: DebugMode) -> Self {
+    pub fn new(
+        cartridge: Cartridge,
+        debug_mode: DebugMode,
+        logs: Arc<Mutex<BoundedVecDeque<String>>>,
+    ) -> Self {
         let cpu = Cpu::new();
         let input = Rc::new(RefCell::new(Input::new()));
         let gpu = Rc::new(RefCell::new(Gpu::new()));
@@ -77,6 +89,7 @@ impl Emulator {
             input,
             gpu,
             debug_mode,
+            logs,
         }
     }
     /// Runs the emulator.
@@ -682,7 +695,9 @@ impl Emulator {
             .begin()
         {
             if ui.collapsing_header("Logs", TreeNodeFlags::DEFAULT_OPEN | TreeNodeFlags::LEAF) {
-                ui.text("logs");
+                for log in self.logs.lock().expect("lock acquired").iter() {
+                    ui.text(log);
+                }
             }
 
             bottom_panel_win_token.end();
@@ -756,6 +771,7 @@ void main() {
 }
 "#;
 
+/// Creates a [`glow::Context`] that forwards to `glGetProcAddress`.
 fn glow_context(window: &Window) -> glow::Context {
     unsafe {
         glow::Context::from_loader_function(|s| window.subsystem().gl_get_proc_address(s) as _)
