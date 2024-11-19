@@ -8,9 +8,9 @@ use std::{
 };
 use tracing::{
     field::{Field, Visit},
-    Subscriber,
+    Event, Subscriber,
 };
-use tracing_subscriber::Layer;
+use tracing_subscriber::{layer::Context, Layer};
 
 /// Key for the field containing the message in a tracing event.
 const MESSAGE_KEY: &str = "message";
@@ -27,12 +27,16 @@ const NO_MESSAGE_VALUE: &str = "<none>";
 /// Pattern used to format the timestamp that is output in a log.
 const TIMESTAMP_FORMAT: &str = "%FT%T%.3f";
 
+/// A [`Layer`] implementation which captures logs and buffers them in memory for display in the
+/// UI.
 #[derive(Debug)]
 pub struct MessageCaptureLayer {
+    /// Buffered log messages with a bounded size.
     messages: Arc<Mutex<BoundedVecDeque<String>>>,
 }
 
 impl MessageCaptureLayer {
+    /// Creates a new [`MessageCaptureLayer`].
     pub fn new(messages: Arc<Mutex<BoundedVecDeque<String>>>) -> Self {
         Self { messages }
     }
@@ -42,11 +46,7 @@ impl<S> Layer<S> for MessageCaptureLayer
 where
     S: Subscriber,
 {
-    fn on_event(
-        &self,
-        event: &tracing::Event<'_>,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
-    ) {
+    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let mut visitor = MessageCaptureVisitor::default();
         event.record(&mut visitor);
 
@@ -68,8 +68,11 @@ where
     }
 }
 
+/// A [`Visit`] implementation that simply pusehs the [`Debug`] representation of the field into a
+/// [`HashMap`].
 #[derive(Debug, Default)]
 struct MessageCaptureVisitor<'k> {
+    /// Contains the field data for a given [`Event`].
     fields: HashMap<&'k str, String>,
 }
 
