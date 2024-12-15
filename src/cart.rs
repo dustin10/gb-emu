@@ -158,6 +158,7 @@ impl Mapper for RomOnly {
     }
     /// Writes a single byte to memory at the given address.
     fn write_u8(&mut self, address: u16, byte: u8) {
+        tracing::debug!("write RomOnly address: {:#4x} = {:#2x}", address, byte);
         self.data[address as usize] = byte;
     }
 }
@@ -165,6 +166,12 @@ impl Mapper for RomOnly {
 impl Mbc for RomOnly {
     /// Writes a block of bytes to memory at the given start address.
     fn write_block(&mut self, start_addr: u16, bytes: &[u8]) {
+        tracing::debug!(
+            "writing {} bytes to memory block starting at {:#4x}",
+            bytes.len(),
+            start_addr
+        );
+
         let num_bytes = bytes.len();
         let dest_start = start_addr as usize;
         let dest_end = dest_start + num_bytes;

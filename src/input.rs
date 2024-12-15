@@ -68,6 +68,13 @@ pub enum ReadMode {
     Both,
 }
 
+impl Display for ReadMode {
+    /// Writes a string representation of the [`ReadMode`] to the formatter.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:?}", self))
+    }
+}
+
 /// The [`Input`] struct represents the GameBoy joypad and maintains the state of the buttons
 /// pressed by the user.
 #[derive(Debug)]
@@ -146,6 +153,8 @@ impl Input {
             s &= !(1 << RIGHT_BIT_POSITION);
         }
 
+        tracing::debug!("joystick button state read: {:#010b}", s);
+
         s
     }
     /// Returns the byte that represents the current state of the directions.
@@ -176,6 +185,8 @@ impl Input {
             s &= !(1 << B_BIT_POSITION);
         }
 
+        tracing::debug!("joystick direction state read: {:#010b}", s);
+
         s
     }
 }
@@ -205,6 +216,8 @@ impl Mapper for Input {
             (false, true) => ReadMode::Buttons,
             (false, false) => ReadMode::Neither,
         };
+
+        tracing::debug!("input read mode set to {}", mode);
 
         self.mode = mode;
     }

@@ -129,6 +129,7 @@ pub enum Mode {
 }
 
 impl From<Mode> for u8 {
+    // Converts the specified [`Mode`] to a [`u8`].
     fn from(value: Mode) -> Self {
         match value {
             Mode::Boot => 0,
@@ -182,10 +183,12 @@ impl Mmu {
 impl Mapper for Mmu {
     /// Reads a single byte from memory at the given address.
     fn read_u8(&self, address: u16) -> u8 {
+        tracing::debug!("dispatching read of memory address: {:#4x}", address);
+
         match self.mode {
             Mode::Boot => match address {
                 0..0xFF => BOOT_ROM[address as usize],
-                _ => panic!("read invalid boot ROM address"),
+                _ => panic!("invalid boot ROM address read"),
             },
             Mode::Cartridge => match address {
                 0..=END_MBC_ADDRESS => self.mbc.borrow().read_u8(address),
@@ -197,7 +200,7 @@ impl Mapper for Mmu {
                 IF_ADDRESS => self.interrupt_flag.into(),
                 BANK_REG_ADDRESS => self.mode.into(),
                 _ => {
-                    tracing::warn!("read from unmapped address: {:4x}", address);
+                    tracing::warn!("read unmapped address: {:#4x}", address);
                     0
                 }
             },
@@ -205,6 +208,8 @@ impl Mapper for Mmu {
     }
     /// Writes a single byte to memory at the given address.
     fn write_u8(&mut self, address: u16, byte: u8) {
+        tracing::debug!("dispatching write memory address: {:#4x}", address);
+
         match address {
             0..=END_MBC_ADDRESS => self.mbc.borrow_mut().write_u8(address, byte),
             START_VRAM_ADDRESS..=END_VRAM_ADDRESS => {

@@ -39,6 +39,7 @@ impl Timer {
 impl Mapper for Timer {
     /// Reads the timer-related value mapped to the given address.
     fn read_u8(&self, address: u16) -> u8 {
+        tracing::debug!("read timer address: {:#4x}", address);
         match address {
             DIV_ADDRESS => self.div,
             TIMA_ADDRESS => self.tima,
@@ -49,6 +50,7 @@ impl Mapper for Timer {
     }
     /// Writes the timer-related value mapped to the given address.
     fn write_u8(&mut self, address: u16, byte: u8) {
+        tracing::debug!("write timer address: {:#4x} = {:#2x}", address, byte);
         match address {
             DIV_ADDRESS => self.div = 0,
             TIMA_ADDRESS => self.tima = byte,
