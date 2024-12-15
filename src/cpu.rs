@@ -583,25 +583,25 @@ impl Display for Operation {
         match self {
             Operation::ADCA { target } => f.write_fmt(format_args!("ADC A, {}", target)),
             Operation::ADCAMEM => f.write_str("ADC A, [HL]"),
-            Operation::ADCAU8 { value } => f.write_fmt(format_args!("ADC A, {:#4x}", value)),
+            Operation::ADCAU8 { value } => f.write_fmt(format_args!("ADC A, {:#04x}", value)),
             Operation::ADDA { target } => f.write_fmt(format_args!("ADD A, {}", target)),
             Operation::ADDAMEM => f.write_str("ADD A, [HL]"),
-            Operation::ADDAU8 { value } => f.write_fmt(format_args!("ADD A, {:#4x}", value)),
+            Operation::ADDAU8 { value } => f.write_fmt(format_args!("ADD A, {:#04x}", value)),
             Operation::ADDHL { target } => f.write_fmt(format_args!("ADD HL, {}", target)),
-            Operation::ADDSP { value } => f.write_fmt(format_args!("ADD SP, {:#4x}", value)),
+            Operation::ADDSP { value } => f.write_fmt(format_args!("ADD SP, {:#04x}", value)),
             Operation::ANDA { target } => f.write_fmt(format_args!("AND A, {}", target)),
             Operation::ANDAMEM => f.write_str("AND A, [HL]"),
-            Operation::ANDAU8 { value } => f.write_fmt(format_args!("AND A, {:#4x}", value)),
+            Operation::ANDAU8 { value } => f.write_fmt(format_args!("AND A, {:#04x}", value)),
             Operation::BIT { bit, target } => f.write_fmt(format_args!("BIT {}, {}", bit, target)),
             Operation::BITHL { bit } => f.write_fmt(format_args!("BIT {}, [HL]", bit)),
-            Operation::CALL { value } => f.write_fmt(format_args!("CALL {:#4x}", value)),
+            Operation::CALL { value } => f.write_fmt(format_args!("CALL {:#06x}", value)),
             Operation::CALLC { target, value, .. } => {
-                f.write_fmt(format_args!("CALL {}, {:#4x}", target, value))
+                f.write_fmt(format_args!("CALL {}, {:#06x}", target, value))
             }
             Operation::CCF => f.write_str("CCF"),
             Operation::CPA { target } => f.write_fmt(format_args!("CP A, {}", target)),
             Operation::CPAMEM => f.write_str("CP A, [HL]"),
-            Operation::CPAU8 { value } => f.write_fmt(format_args!("CP A, {:#4x}", value)),
+            Operation::CPAU8 { value } => f.write_fmt(format_args!("CP A, {:#04x}", value)),
             Operation::CPL => f.write_str("CPL"),
             Operation::DAA => f.write_str("DAA"),
             Operation::DEC { target } => f.write_fmt(format_args!("DEC {}", target)),
@@ -611,14 +611,14 @@ impl Display for Operation {
             Operation::HALT => f.write_str("HALT"),
             Operation::INC { target } => f.write_fmt(format_args!("INC {}", target)),
             Operation::INCMEM => f.write_str("INC [HL]"),
-            Operation::JP { value } => f.write_fmt(format_args!("JP {:#4x}", value)),
+            Operation::JP { value } => f.write_fmt(format_args!("JP {:#06x}", value)),
             Operation::JPC { target, value, .. } => {
-                f.write_fmt(format_args!("JP {}, {:#4x}", target, value))
+                f.write_fmt(format_args!("JP {}, {:#06x}", target, value))
             }
             Operation::JPHL => f.write_str("JP HL"),
-            Operation::JR { offset } => f.write_fmt(format_args!("JR {:#4x}", offset)),
+            Operation::JR { offset } => f.write_fmt(format_args!("JR {:#04x}", offset)),
             Operation::JRC { target, offset, .. } => {
-                f.write_fmt(format_args!("JR {}, {:#4x}", target, offset))
+                f.write_fmt(format_args!("JR {}, {:#04x}", target, offset))
             }
             Operation::LDA { target } => f.write_fmt(format_args!("LD [{}], A", target)),
             Operation::LDADEC => f.write_fmt(format_args!("LD [HL-], A")),
@@ -627,20 +627,20 @@ impl Display for Operation {
             Operation::LDAMEMDEC => f.write_str("LD A, [HL-]"),
             Operation::LDAMEMINC => f.write_str("LD A, [HL+]"),
             Operation::LDAOFFSET { value } => {
-                f.write_fmt(format_args!("LD [$FF00 + {:#4x}], A", value))
+                f.write_fmt(format_args!("LD [$FF00 + {:#04x}], A", value))
             }
             Operation::LDAOFFSETC => f.write_str("LD [$FF00 + C], A"),
-            Operation::LDAU16 { address } => f.write_fmt(format_args!("LD [{:#6x}], A", address)),
+            Operation::LDAU16 { address } => f.write_fmt(format_args!("LD [{:#06x}], A", address)),
             Operation::LDA16 { address, target } => {
-                f.write_fmt(format_args!("LD [{:#6x}], {}", address, target))
+                f.write_fmt(format_args!("LD [{:#06x}], {}", address, target))
             }
-            Operation::LDHLSP { value } => f.write_fmt(format_args!("LD HL, SP + {:#4x}", value)),
-            Operation::LDMEMA { address } => f.write_fmt(format_args!("LD A, [{:#6x}]", address)),
+            Operation::LDHLSP { value } => f.write_fmt(format_args!("LD HL, SP + {:#04x}", value)),
+            Operation::LDMEMA { address } => f.write_fmt(format_args!("LD A, [{:#06x}]", address)),
             Operation::LDMEMREG { store, target } => {
                 f.write_fmt(format_args!("LD [{}], {}", store, target))
             }
             Operation::LDOFFSETA { value } => {
-                f.write_fmt(format_args!("LD A, [$FF00 + {:#4x}]", value))
+                f.write_fmt(format_args!("LD A, [$FF00 + {:#04x}]", value))
             }
             Operation::LDOFFSETCA => f.write_str("LD A, [$FF00 + C]"),
             Operation::LDREG { store, target } => {
@@ -651,16 +651,16 @@ impl Display for Operation {
             }
             Operation::LDSPHL => f.write_str("LD SP, HL"),
             Operation::LDU16 { target, value } => {
-                f.write_fmt(format_args!("LD {}, {:#6x}", target, value))
+                f.write_fmt(format_args!("LD {}, {:#06x}", target, value))
             }
             Operation::LDU8 { target, value } => {
-                f.write_fmt(format_args!("LD {}, {:#4x}", target, value))
+                f.write_fmt(format_args!("LD {}, {:#04x}", target, value))
             }
-            Operation::LDU8MEM { value } => f.write_fmt(format_args!("LD [HL], {:#4x}", value)),
+            Operation::LDU8MEM { value } => f.write_fmt(format_args!("LD [HL], {:#04x}", value)),
             Operation::NOP => f.write_str("NOP"),
             Operation::ORA { target } => f.write_fmt(format_args!("OR A, {}", target)),
             Operation::ORAMEM => f.write_str("OR A, [HL]"),
-            Operation::ORAU8 { value } => f.write_fmt(format_args!("OR A, {:#4x}", value)),
+            Operation::ORAU8 { value } => f.write_fmt(format_args!("OR A, {:#04x}", value)),
             Operation::POP { target } => f.write_fmt(format_args!("POP {}", target)),
             Operation::PREFIX => f.write_str("PREFIX"),
             Operation::PUSH { target } => f.write_fmt(format_args!("PUSH {}", target)),
@@ -681,10 +681,10 @@ impl Display for Operation {
             Operation::RRC { target } => f.write_fmt(format_args!("RRC {}", target)),
             Operation::RRCA => f.write_str("RRCA"),
             Operation::RRCHL => f.write_str("RRC [HL]"),
-            Operation::RST { value } => f.write_fmt(format_args!("RST {:#4x}", value)),
+            Operation::RST { value } => f.write_fmt(format_args!("RST {:#04x}", value)),
             Operation::SBCA { target } => f.write_fmt(format_args!("SBC A, {}", target)),
             Operation::SBCAMEM => f.write_str("SBC A, [HL]"),
-            Operation::SBCAU8 { value } => f.write_fmt(format_args!("SBC A, {:#4x}", value)),
+            Operation::SBCAU8 { value } => f.write_fmt(format_args!("SBC A, {:#04x}", value)),
             Operation::SCF => f.write_str("SCF"),
             Operation::SET { bit, target } => f.write_fmt(format_args!("SET {}, {}", bit, target)),
             Operation::SETHL { bit } => f.write_fmt(format_args!("SET {}, [HL]", bit)),
@@ -697,12 +697,12 @@ impl Display for Operation {
             Operation::STOP => f.write_str("STOP"),
             Operation::SUBA { target } => f.write_fmt(format_args!("SUB A, {}", target)),
             Operation::SUBAMEM => f.write_str("SUB A, [HL]"),
-            Operation::SUBAU8 { value } => f.write_fmt(format_args!("SUB A, {:#4x}", value)),
+            Operation::SUBAU8 { value } => f.write_fmt(format_args!("SUB A, {:#04x}", value)),
             Operation::SWAP { target } => f.write_fmt(format_args!("SWAP {}", target)),
             Operation::SWAPHL => f.write_str("SWAP [HL]"),
             Operation::XORA { target } => f.write_fmt(format_args!("XOR A, {}", target)),
             Operation::XORAMEM => f.write_str("XOR A, [HL]"),
-            Operation::XORAU8 { value } => f.write_fmt(format_args!("XOR A, {:#4x}", value)),
+            Operation::XORAU8 { value } => f.write_fmt(format_args!("XOR A, {:#04x}", value)),
         }
     }
 }
@@ -1394,13 +1394,13 @@ impl Cpu {
 
             clock_ticks
         } else {
-            tracing::warn!("skipping unknown instruction: {:#4x}", op_code);
+            tracing::warn!("skipping unknown instruction: {:#04x}", op_code);
             0
         }
     }
     /// Transforms the given op code into an [`Instruction`] which can be executed by the [`Cpu`].
     fn decode(&self, op_code: u8, memory: &dyn Mapper) -> Option<Instruction> {
-        tracing::debug!("decode op code {:#4x}", op_code);
+        tracing::debug!("decode op code {:#04x}", op_code);
 
         match op_code {
             // 0x0x
@@ -1807,7 +1807,7 @@ impl Cpu {
     /// Transforms the given prefixed op code into an [`Instruction`] which can be executed by the
     /// [`Cpu`]. An op code is prefixed if the preceding op code byte was 0xCB.
     fn decode_prefixed(&self, op_code: u8) -> Option<Instruction> {
-        tracing::debug!("decode prefixed op code {:#4x}", op_code);
+        tracing::debug!("decode prefixed op code {:#04x}", op_code);
 
         match op_code {
             // 0x0x
