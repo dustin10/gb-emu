@@ -128,6 +128,13 @@ pub enum Mode {
     Cartridge,
 }
 
+impl Display for Mode {
+    /// Writes a string representation of the [`Mode`] to the formatter.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:?}", self))
+    }
+}
+
 impl From<Mode> for u8 {
     // Converts the specified [`Mode`] to a [`u8`].
     fn from(value: Mode) -> Self {
@@ -183,7 +190,7 @@ impl Mmu {
 impl Mapper for Mmu {
     /// Reads a single byte from memory at the given address.
     fn read_u8(&self, address: u16) -> u8 {
-        tracing::debug!("dispatching read of memory address: {:#4x}", address);
+        tracing::debug!("dispatch read memory address: {:#06x}", address);
 
         match self.mode {
             Mode::Boot => match address {
@@ -200,7 +207,7 @@ impl Mapper for Mmu {
                 IF_ADDRESS => self.interrupt_flag.into(),
                 BANK_REG_ADDRESS => self.mode.into(),
                 _ => {
-                    tracing::warn!("read unmapped address: {:#4x}", address);
+                    tracing::warn!("read unmapped address: {:#06x}", address);
                     0
                 }
             },
@@ -208,7 +215,7 @@ impl Mapper for Mmu {
     }
     /// Writes a single byte to memory at the given address.
     fn write_u8(&mut self, address: u16, byte: u8) {
-        tracing::debug!("dispatching write memory address: {:#4x}", address);
+        tracing::debug!("dispatching write memory address: {:#06x}", address);
 
         match address {
             0..=END_MBC_ADDRESS => self.mbc.borrow_mut().write_u8(address, byte),
@@ -220,8 +227,11 @@ impl Mapper for Mmu {
             INPUT_ADDRESS => self.input.borrow_mut().write_u8(address, byte),
             IE_ADDRESS => self.interrupt_enabled = byte.into(),
             IF_ADDRESS => self.interrupt_flag = byte.into(),
-            BANK_REG_ADDRESS => self.mode = Mode::Cartridge,
-            _ => tracing::warn!("write to unmapped address: {:4x}", address),
+            BANK_REG_ADDRESS => {
+                tracing::debug!("mmu mode switched to {}", Mode::Cartridge);
+                self.mode = Mode::Cartridge;
+            }
+            _ => tracing::warn!("write to unmapped address: {:06x}", address),
         }
     }
 }

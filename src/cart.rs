@@ -112,7 +112,7 @@ impl From<u8> for CartridgeKind {
                 ram: true,
                 battery: true,
             },
-            _ => panic!("unsupported cartridge type: {:#2x}", value),
+            _ => panic!("unsupported cartridge type: {:#02x}", value),
         }
     }
 }
@@ -154,11 +154,16 @@ impl RomOnly {
 impl Mapper for RomOnly {
     /// Reads a single byte from memory at the given address.
     fn read_u8(&self, address: u16) -> u8 {
+        tracing::debug!("read RomOnly MBC address: {:#06x}", address);
         self.data[address as usize]
     }
     /// Writes a single byte to memory at the given address.
     fn write_u8(&mut self, address: u16, byte: u8) {
-        tracing::debug!("write RomOnly address: {:#4x} = {:#2x}", address, byte);
+        tracing::debug!(
+            "write RomOnly MBC address: {:#06x} = {:#04x}",
+            address,
+            byte
+        );
         self.data[address as usize] = byte;
     }
 }
@@ -167,7 +172,7 @@ impl Mbc for RomOnly {
     /// Writes a block of bytes to memory at the given start address.
     fn write_block(&mut self, start_addr: u16, bytes: &[u8]) {
         tracing::debug!(
-            "writing {} bytes to memory block starting at {:#4x}",
+            "write {} bytes to RomOnly MBC memory starting at {:#06x}",
             bytes.len(),
             start_addr
         );
