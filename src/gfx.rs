@@ -1,3 +1,57 @@
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Color {
+    Transparent,
+    RGB { r: u8, g: u8, b: u8 },
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ColorIndex {
+    Zero,
+    One,
+    Two,
+    Three,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Pallette {
+    one: Color,
+    two: Color,
+    three: Color,
+}
+
+impl Pallette {
+    pub fn new(one: Color, two: Color, three: Color) -> Self {
+        Self { one, two, three }
+    }
+    pub fn get_color(&self, index: ColorIndex) -> Color {
+        match index {
+            ColorIndex::Zero => Color::Transparent,
+            ColorIndex::One => self.one,
+            ColorIndex::Two => self.two,
+            ColorIndex::Three => self.three,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Tile {
+    pub pixels: [ColorIndex; 64],
+}
+
+impl Tile {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for Tile {
+    fn default() -> Self {
+        Self {
+            pixels: [ColorIndex::Zero; 64],
+        }
+    }
+}
+
 /// The [`Gpu`] is responsible for managing the VRAM and drawing the graphics to the emulator
 /// screen.
 pub struct Gpu {
