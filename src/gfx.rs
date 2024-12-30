@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Color {
     Transparent,
@@ -12,6 +14,12 @@ pub enum ColorIndex {
     Three,
 }
 
+impl Display for ColorIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:?}", self))
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Pallette {
     one: Color,
@@ -24,6 +32,8 @@ impl Pallette {
         Self { one, two, three }
     }
     pub fn get_color(&self, index: ColorIndex) -> Color {
+        tracing::trace!("pallette color at index {}", index);
+
         match index {
             ColorIndex::Zero => Color::Transparent,
             ColorIndex::One => self.one,
@@ -33,9 +43,31 @@ impl Pallette {
     }
 }
 
+impl Default for Pallette {
+    fn default() -> Self {
+        Self::new(
+            Color::RGB {
+                r: 139,
+                g: 172,
+                b: 15,
+            },
+            Color::RGB {
+                r: 48,
+                g: 98,
+                b: 48,
+            },
+            Color::RGB {
+                r: 15,
+                g: 56,
+                b: 15,
+            },
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct Tile {
-    pub pixels: [ColorIndex; 64],
+    pub data: [ColorIndex; 64],
 }
 
 impl Tile {
@@ -47,7 +79,7 @@ impl Tile {
 impl Default for Tile {
     fn default() -> Self {
         Self {
-            pixels: [ColorIndex::Zero; 64],
+            data: [ColorIndex::Zero; 64],
         }
     }
 }
