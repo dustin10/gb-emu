@@ -364,7 +364,7 @@ pub struct Cartridge {
 
 impl Cartridge {
     /// Creates a new [`Cartridge`] from the GameBoy ROM file at the specified path.
-    pub fn from_rom(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+    pub fn from_rom_file(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         tracing::debug!("load cartridge from rom file: {:?}", path.as_ref());
 
         let name = path

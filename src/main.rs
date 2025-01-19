@@ -79,7 +79,7 @@ fn main() -> anyhow::Result<()> {
         .with(global_filter)
         .init();
 
-    let cartridge = Cartridge::from_rom(&args.rom).context("create Cartridge from ROM file")?;
+    let cartridge = Cartridge::from_rom_file(&args.rom).context("create Cartridge from ROM file")?;
 
     Emulator::new(cartridge, args.debug_mode(), logs).run()
 }
