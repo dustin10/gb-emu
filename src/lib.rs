@@ -14,7 +14,7 @@ use crate::{
 };
 
 use bounded_vec_deque::BoundedVecDeque;
-use gfx::Gpu;
+use gfx::{ColorIndex, Gpu, Pallette};
 use imgui::{Context, TableColumnSetup, TreeNodeFlags, Ui};
 use imgui_glow_renderer::{
     glow::{self, HasContext},
@@ -27,6 +27,7 @@ use std::{
     rc::Rc,
     sync::{Arc, Mutex},
 };
+use util::{LogEntry, LogLevel};
 
 /// Contains the memory address the program counter should be set to after the boot screen is
 /// displayed in order to start executing the cartridge instructions.
@@ -62,7 +63,7 @@ pub struct Emulator {
     /// Current debug mode of the emulator.
     pub debug_mode: DebugMode,
     /// Logs to display in the debug UI if enabled.
-    pub logs: Arc<Mutex<BoundedVecDeque<String>>>,
+    pub logs: Arc<Mutex<BoundedVecDeque<LogEntry>>>,
 }
 
 impl Emulator {
@@ -70,7 +71,7 @@ impl Emulator {
     pub fn new(
         cartridge: Cartridge,
         debug_mode: DebugMode,
-        logs: Arc<Mutex<BoundedVecDeque<String>>>,
+        logs: Arc<Mutex<BoundedVecDeque<LogEntry>>>,
     ) -> Self {
         let cpu = Cpu::new();
         let input = Rc::new(RefCell::new(Input::new()));
@@ -238,6 +239,8 @@ impl Emulator {
             Ok(event_pump) => event_pump,
         };
 
+        let pallette = Pallette::default();
+
         let mut texture_scroller: usize = 0;
 
         'main: loop {
@@ -382,20 +385,20 @@ impl Emulator {
                 for col in 0..640 {
                     let col_scroller = (col + texture_scroller) % 640;
 
-                    let (r, g, b) = if col_scroller < 160 {
-                        (155, 188, 15)
+                    let color = if col_scroller < 160 {
+                        pallette.get_color_by_index(ColorIndex::Background)
                     } else if col_scroller < 320 {
-                        (139, 172, 15)
+                        pallette.get_color_by_index(ColorIndex::A)
                     } else if col_scroller < 480 {
-                        (48, 98, 48)
+                        pallette.get_color_by_index(ColorIndex::B)
                     } else {
-                        (15, 56, 15)
+                        pallette.get_color_by_index(ColorIndex::C)
                     };
 
                     let base = (3 * row * 640) + (col * 3);
-                    pixel_data[base] = r;
-                    pixel_data[base + 1] = g;
-                    pixel_data[base + 2] = b;
+                    pixel_data[base] = color.r;
+                    pixel_data[base + 1] = color.g;
+                    pixel_data[base + 2] = color.b;
                 }
             }
 
@@ -695,8 +698,25 @@ impl Emulator {
             .begin()
         {
             if ui.collapsing_header("Logs", TreeNodeFlags::DEFAULT_OPEN | TreeNodeFlags::LEAF) {
-                for log in self.logs.lock().expect("lock acquired").iter() {
-                    ui.text(log);
+                for entry in self.logs.lock().expect("lock acquired").iter() {
+                    let log = format!(
+                        "{} [{}] ({}:{}) - {}",
+                        entry.format_timestamp(),
+                        entry.level,
+                        entry.file,
+                        entry.line,
+                        entry.message,
+                    );
+
+                    let color = match entry.level {
+                        LogLevel::TRACE => LOG_TRACE_COLOR,
+                        LogLevel::DEBUG => LOG_DEBUG_COLOR,
+                        LogLevel::INFO => LOG_INFO_COLOR,
+                        LogLevel::WARN => LOG_WARN_COLOR,
+                        LogLevel::ERROR => LOG_ERROR_COLOR,
+                    };
+
+                    ui.text_colored(color, log);
                 }
             }
 
@@ -704,6 +724,21 @@ impl Emulator {
         }
     }
 }
+
+/// Color used to render TRACE level logs in the debug UI.
+const LOG_TRACE_COLOR: [f32; 4] = [0.33, 0.33, 0.33, 1.0];
+
+/// Color used to render DEBUG level logs in the debug UI.
+const LOG_DEBUG_COLOR: [f32; 4] = [0.66, 0.66, 0.66, 1.0];
+
+/// Color used to render INFO level logs in the debug UI.
+const LOG_INFO_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+
+/// Color used to render WARN level logs in the debug UI.
+const LOG_WARN_COLOR: [f32; 4] = [1.0, 1.0, 0.0, 1.0];
+
+/// Color used to render ERROR level logs in the debug UI.
+const LOG_ERROR_COLOR: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
 
 /// Source code for the OpenGL vertex shader that outputs the screen texture to the window. It
 /// hard-codes a static square which the screen texture is mapped onto.

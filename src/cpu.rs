@@ -154,6 +154,7 @@ impl From<Flags> for u8 {
 }
 
 impl Display for Flags {
+    /// Writes a string representation of the [`Flags`] value to the formatter.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
@@ -174,7 +175,7 @@ pub enum CondJumpTarget {
 }
 
 impl Display for CondJumpTarget {
-    /// Writes a string representation of the [`CondJumpTarget`] to the formatter.
+    /// Writes a string representation of the [`CondJumpTarget`] value to the formatter.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{:?}", self))
     }

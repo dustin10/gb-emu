@@ -1,86 +1,115 @@
 use std::fmt::Display;
 
+/// The [`Color`] struct defines a color in the RGBA format with values of each component ranging
+/// from 0 to 255.
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Color {
-    Transparent,
-    RGB { r: u8, g: u8, b: u8 },
+pub struct Color {
+    // Red component.
+    pub r: u8,
+    // Green component.
+    pub g: u8,
+    // Blue component.
+    pub b: u8,
+    // Alpha component.
+    pub a: u8,
 }
 
+/// Enumerates the values which can be used to reference a [`Color`] in the current
+/// active [`Pallette`].
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ColorIndex {
-    Zero,
-    One,
-    Two,
-    Three,
+    /// Background color correponding to 0.
+    Background,
+    /// The color correponding to 1.
+    A,
+    /// The color correponding to 2.
+    B,
+    /// The color correponding to 3.
+    C,
+}
+
+impl From<u8> for ColorIndex {
+    /// Creates a [`ColorIndex`] from a [`u8`] value.
+    fn from(value: u8) -> Self {
+        match value {
+            0 => ColorIndex::Background,
+            1 => ColorIndex::A,
+            2 => ColorIndex::B,
+            3 => ColorIndex::C,
+            _ => {
+                tracing::warn!("invalid u8 converted to ColorIndex: {}", value);
+                ColorIndex::C
+            }
+        }
+    }
 }
 
 impl Display for ColorIndex {
+    /// Writes a string representation of the [`ColorIndex`] value to the formatter.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{:?}", self))
     }
 }
 
+/// The [`Pallette`] struct contains the set of [`Color`]s that will be used to render the frame
+/// onto the emulator screen.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Pallette {
-    one: Color,
-    two: Color,
-    three: Color,
+    /// Background color correponding to 0.
+    bg: Color,
+    /// The color correponding to 1.
+    a: Color,
+    /// The color correponding to 2.
+    b: Color,
+    /// The color correponding to 3.
+    c: Color,
 }
 
 impl Pallette {
-    pub fn new(one: Color, two: Color, three: Color) -> Self {
-        Self { one, two, three }
+    /// Creates a new [`Pallette`] with the given four [`Color`]s.
+    pub fn new(bg: Color, a: Color, b: Color, c: Color) -> Self {
+        Self { bg, a, b, c }
     }
-    pub fn get_color(&self, index: ColorIndex) -> Color {
-        tracing::trace!("pallette color at index {}", index);
-
+    /// Gets a reference to the [`Color`] which correponds to the specified [`ColorIndex`].
+    pub fn get_color_by_index(&self, index: ColorIndex) -> &Color {
         match index {
-            ColorIndex::Zero => Color::Transparent,
-            ColorIndex::One => self.one,
-            ColorIndex::Two => self.two,
-            ColorIndex::Three => self.three,
+            ColorIndex::Background => &self.bg,
+            ColorIndex::A => &self.a,
+            ColorIndex::B => &self.b,
+            ColorIndex::C => &self.c,
         }
     }
 }
 
 impl Default for Pallette {
+    /// Creates a [`Pallette`] with the default GameBoy color scheme.
     fn default() -> Self {
         Self::new(
-            Color::RGB {
+            Color {
+                r: 155,
+                g: 188,
+                b: 15,
+                a: 1,
+            },
+            Color {
                 r: 139,
                 g: 172,
                 b: 15,
+                a: 1,
             },
-            Color::RGB {
+            Color {
                 r: 48,
                 g: 98,
                 b: 48,
+                a: 1,
             },
-            Color::RGB {
+            Color {
                 r: 15,
                 g: 56,
                 b: 15,
+                a: 1,
             },
         )
-    }
-}
-
-#[derive(Debug)]
-pub struct Tile {
-    pub data: [ColorIndex; 64],
-}
-
-impl Tile {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl Default for Tile {
-    fn default() -> Self {
-        Self {
-            data: [ColorIndex::Zero; 64],
-        }
     }
 }
 
