@@ -146,7 +146,7 @@ impl Emulator {
             .gl_set_swap_interval(1)
             .expect("opengl swap interval set");
 
-        let gl = glow_context(&window);
+        let gl = create_glow_context(&window);
 
         let mut imgui = Context::create();
 
@@ -161,10 +161,7 @@ impl Emulator {
         let mut renderer = AutoRenderer::new(gl, &mut imgui).expect("renderer created");
         let gl = Rc::clone(renderer.gl_context());
 
-        let vertex_array = unsafe {
-            gl.create_vertex_array()
-                .expect("Cannot create vertex array")
-        };
+        let vertex_array = unsafe { gl.create_vertex_array().expect("vertex array created") };
 
         let program = unsafe { gl.create_program().expect("program created") };
 
@@ -175,9 +172,9 @@ impl Emulator {
 
         let mut compiled_shaders = Vec::with_capacity(shaders.len());
 
-        for (shader_type, shader_src) in shaders.iter() {
+        for (shader_type, shader_src) in shaders {
             let shader = unsafe {
-                let shader = gl.create_shader(*shader_type).expect("shader created");
+                let shader = gl.create_shader(shader_type).expect("shader created");
 
                 gl.shader_source(shader, shader_src);
                 gl.compile_shader(shader);
@@ -342,6 +339,7 @@ impl Emulator {
                         ..
                     } => {
                         if self.debug_mode != DebugMode::Disabled {
+                            tracing::trace!("debug_mode changed to Pause");
                             self.debug_mode = DebugMode::Pause;
                         }
                     }
@@ -350,6 +348,7 @@ impl Emulator {
                         ..
                     } => {
                         if self.debug_mode != DebugMode::Disabled {
+                            tracing::trace!("debug_mode changed to Step");
                             self.debug_mode = DebugMode::Step;
                         }
                     }
@@ -358,6 +357,7 @@ impl Emulator {
                         ..
                     } => {
                         if self.debug_mode != DebugMode::Disabled {
+                            tracing::trace!("debug_mode changed to Continue");
                             self.debug_mode = DebugMode::Continue;
                         }
                     }
@@ -379,7 +379,7 @@ impl Emulator {
                 renderer.render(draw_data).expect("imgui ui rendered");
             }
 
-            // for now just write color palette to the screen texture
+            // for now just scroll the color palette across the screen texture
             let mut pixel_data = vec![u8::MAX; 640 * 576 * 3];
             for row in 0..576 {
                 for col in 0..640 {
@@ -807,7 +807,7 @@ void main() {
 "#;
 
 /// Creates a [`glow::Context`] that forwards to `glGetProcAddress`.
-fn glow_context(window: &Window) -> glow::Context {
+fn create_glow_context(window: &Window) -> glow::Context {
     unsafe {
         glow::Context::from_loader_function(|s| window.subsystem().gl_get_proc_address(s) as _)
     }
