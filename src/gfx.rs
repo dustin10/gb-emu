@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 /// The [`Color`] struct defines a color in the RGBA format with values of each component ranging
 /// from 0 to 255.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Color {
     // Red component.
     pub r: u8,
@@ -16,7 +16,7 @@ pub struct Color {
 
 /// Enumerates the values which can be used to reference a [`Color`] in the current
 /// active [`Pallette`].
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ColorIndex {
     /// Background color correponding to 0.
     Background,
@@ -113,15 +113,129 @@ impl Default for Pallette {
     }
 }
 
-/// The [`Gpu`] is responsible for managing the VRAM and drawing the graphics to the emulator
+/// A [`Tile`] is a square consisting of an 8 x 8 grouping of pixels. Each pixel value contains an
+/// index into the [`Pallette`] that represents the color that should be used to render it.
+#[derive(Copy, Clone, Debug)]
+pub struct Tile {
+    /// Raw pixel data of the tile containing the index into the color pallette for each pixel.
+    pixels: [u8; 64],
+}
+
+impl Tile {
+    /// Creates a new default [`Tile`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+    /// Creates a new [`Tile`] with the specified pixel data.
+    pub fn with_pixels(pixels: &[u8]) -> Self {
+        let mut tile = Self::default();
+        tile.write_block_u8(0, 0, pixels);
+
+        tile
+    }
+    /// Writes a single byte to the 8 x 8 pixel data of the [`Tile`]. The `row` and `col` are
+    /// zero-based.
+    pub fn write_u8(&mut self, row: usize, col: usize, value: u8) {
+        assert!(row < 7);
+        assert!(col < 7);
+
+        let idx = (row * 7) + col;
+
+        self.pixels[idx] = value;
+    }
+    /// Writes a block of bytes to the 8 x 8 pixel data of the [`Tile`]. The `row` and `col`
+    /// are zero-based and specify the starting position to write the block of bytes.
+    pub fn write_block_u8(&mut self, row: usize, col: usize, bytes: &[u8]) {
+        assert!(row < 7);
+        assert!(col < 7);
+
+        let num_bytes = bytes.len();
+        let dest_start = (row * 7) + col;
+        let dest_end = dest_start + num_bytes;
+
+        self.pixels[dest_start..dest_end].copy_from_slice(&bytes[0..num_bytes]);
+    }
+}
+
+impl Default for Tile {
+    /// Creates a new [`Tile`] whose pixel data consists of all zeros.
+    fn default() -> Self {
+        Self { pixels: [0; 64] }
+    }
+}
+
+/// Enumerates the different types of [`Layer`]s which are used to render the image onto the
+/// emulator screen.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum LayerKind {
+    /// The background is composed of a tilemap. A tilemap is a large grid of tiles. However,
+    /// tiles aren’t directly written to tilemaps, they merely contain references to the tiles.
+    /// This makes reusing tiles very cheap, both in CPU time and in required memory space, and
+    /// it is the main mechanism that helps work around the paltry 8 KiB of video RAM.
+    ///
+    /// The background can be made to scroll as a whole, writing to two hardware registers. This
+    /// makes scrolling very cheap.
+    Background,
+    /// The window is sort of a second background layer on top of the background. It is fairly limited:
+    /// it has no transparency, it’s always a rectangle and only the position of the top-left pixel can
+    /// be controlled.
+    ///
+    /// Possible usage include a fixed status bar in an otherwise scrolling game (e.g. Super Mario Land 2).
+    Window,
+    /// The background layer is useful for elements scrolling as a whole, but it’s impractical for objects
+    /// that need to move separately, such as the player.
+    ///
+    /// The objects layer is designed to fill this gap: objects are made of 1 or 2 stacked tiles
+    /// (8×8 or 8×16 pixels) and can be displayed anywhere on the screen.
+    Objects,
+}
+
+/// Number of tiles per layer. Each tile is an 8 x 8 group of pixels so divide the screen width and
+/// height by 8 and then multiply then together to get the total number of tiles to store for each
+/// layer.
+const TILES_PER_LAYER: usize = (160 / 8) * (144 / 8);
+
+/// A [`Layer`] is a grid of [`Tile`]s which represent a layer of pixels in the final scene
+/// rendered to the emulator display.
+#[derive(Debug)]
+pub struct Layer {
+    /// [`LayerKind`] for the layer.
+    _kind: LayerKind,
+    /// Array of [`Tile`]s that contain the pixel data for the layer.
+    _tiles: [Tile; TILES_PER_LAYER],
+}
+
+impl Layer {
+    /// Creates a new [`Layer`] of the specified [`LayerKind`].
+    fn with_kind(kind: LayerKind) -> Self {
+        Self {
+            _kind: kind,
+            _tiles: [Tile::default(); TILES_PER_LAYER],
+        }
+    }
+    /// Creates a new background [`Layer`].
+    pub fn background() -> Self {
+        Self::with_kind(LayerKind::Background)
+    }
+    /// Creates a new window [`Layer`].
+    pub fn window() -> Self {
+        Self::with_kind(LayerKind::Window)
+    }
+    /// Creates a new objects [`Layer`].
+    pub fn objects() -> Self {
+        Self::with_kind(LayerKind::Objects)
+    }
+}
+
+/// The [`Ppu`] is responsible for managing the VRAM and drawing the graphics to the emulator
 /// screen.
-pub struct Gpu {
+pub struct Ppu {
     /// Video memory of the emulator.
     vram: [u8; 8192],
 }
 
-impl Gpu {
-    /// Creates a new default [`Gpu`].
+impl Ppu {
+    /// Creates a new default [`Ppu`].
     pub fn new() -> Self {
         Self::default()
     }
@@ -139,8 +253,8 @@ impl Gpu {
     }
 }
 
-impl Default for Gpu {
-    /// Creates a default [`Gpu`].
+impl Default for Ppu {
+    /// Creates a default [`Ppu`].
     fn default() -> Self {
         Self { vram: [0; 8192] }
     }

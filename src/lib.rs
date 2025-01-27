@@ -14,7 +14,7 @@ use crate::{
 };
 
 use bounded_vec_deque::BoundedVecDeque;
-use gfx::{ColorIndex, Gpu, Pallette};
+use gfx::{ColorIndex, Pallette, Ppu};
 use imgui::{Context, TableColumnSetup, TreeNodeFlags, Ui};
 use imgui_glow_renderer::{
     glow::{self, HasContext},
@@ -51,19 +51,19 @@ pub enum DebugMode {
 /// required to emulate the Game Boy and play a game cartridge.
 pub struct Emulator {
     /// [`Cpu`] that is responsible for reading, decoding and executing instructions.
-    pub cpu: Cpu,
+    cpu: Cpu,
     /// [`Mmu`] that is used to store data to and load various types of data.
-    pub mmu: Mmu,
+    mmu: Mmu,
     /// [`Cartridge`] that is currently loaded into the emulator.
-    pub cartridge: Cartridge,
+    cartridge: Cartridge,
     /// [`Input`] that allows a user to give input to the emulator.
-    pub input: Rc<RefCell<Input>>,
-    /// [`Gpu`] that draws the game to the screen.
-    pub gpu: Rc<RefCell<Gpu>>,
+    input: Rc<RefCell<Input>>,
+    /// [`Ppu`] that draws the game to the screen.
+    _ppu: Rc<RefCell<Ppu>>,
     /// Current debug mode of the emulator.
-    pub debug_mode: DebugMode,
+    debug_mode: DebugMode,
     /// Logs to display in the debug UI if enabled.
-    pub logs: Arc<Mutex<BoundedVecDeque<LogEntry>>>,
+    logs: Arc<Mutex<BoundedVecDeque<LogEntry>>>,
 }
 
 impl Emulator {
@@ -75,12 +75,12 @@ impl Emulator {
     ) -> Self {
         let cpu = Cpu::new();
         let input = Rc::new(RefCell::new(Input::new()));
-        let gpu = Rc::new(RefCell::new(Gpu::new()));
+        let ppu = Rc::new(RefCell::new(Ppu::new()));
 
         let mmu = Mmu::new(
             Rc::clone(&cartridge.mbc),
             Rc::clone(&input),
-            Rc::clone(&gpu),
+            Rc::clone(&ppu),
         );
 
         Self {
@@ -88,7 +88,7 @@ impl Emulator {
             mmu,
             cartridge,
             input,
-            gpu,
+            _ppu: ppu,
             debug_mode,
             logs,
         }

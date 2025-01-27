@@ -1,6 +1,6 @@
 use crate::{
     cart::Mbc,
-    gfx::Gpu,
+    gfx::Ppu,
     input::{Input, INPUT_ADDRESS},
     timer::Timer,
 };
@@ -154,8 +154,8 @@ pub struct Mmu {
     pub mbc: Rc<RefCell<dyn Mbc>>,
     /// [`Input`] that contains state of the GameBoy controller.
     pub input: Rc<RefCell<Input>>,
-    /// [`Gpu`] that contains video memory.
-    pub gpu: Rc<RefCell<Gpu>>,
+    /// [`Ppu`] that contains video memory.
+    pub ppu: Rc<RefCell<Ppu>>,
     /// [`Timer`] that manages the state of the timers and divider registers.
     pub timer: Timer,
     /// Flag that determines if interrupts are enabled for various subsystems.
@@ -169,20 +169,20 @@ impl Mmu {
     pub fn new(
         mbc: Rc<RefCell<dyn Mbc>>,
         input: Rc<RefCell<Input>>,
-        gpu: Rc<RefCell<Gpu>>,
+        ppu: Rc<RefCell<Ppu>>,
     ) -> Self {
         Self {
             mode: Mode::Boot,
             mbc,
             input,
-            gpu,
+            ppu,
             timer: Timer::new(),
             interrupt_enabled: InterruptFlag::default(),
             interrupt_flag: InterruptFlag::default(),
         }
     }
     /// Writes a block of bytes to memory at the given start address.
-    pub fn write_block(&mut self, start_addr: u16, bytes: &[u8]) {
+    pub fn write_block_u8(&mut self, start_addr: u16, bytes: &[u8]) {
         self.mbc.borrow_mut().write_block(start_addr, bytes);
     }
 }
@@ -200,7 +200,7 @@ impl Mapper for Mmu {
             Mode::Cartridge => match address {
                 0..=END_MBC_ADDRESS => self.mbc.borrow().read_u8(address),
                 START_VRAM_ADDRESS..=END_VRAM_ADDRESS => {
-                    self.gpu.borrow().read_u8(address - START_VRAM_ADDRESS)
+                    self.ppu.borrow().read_u8(address - START_VRAM_ADDRESS)
                 }
                 INPUT_ADDRESS => self.input.borrow().read_u8(address),
                 IE_ADDRESS => self.interrupt_enabled.into(),
@@ -220,7 +220,7 @@ impl Mapper for Mmu {
         match address {
             0..=END_MBC_ADDRESS => self.mbc.borrow_mut().write_u8(address, byte),
             START_VRAM_ADDRESS..=END_VRAM_ADDRESS => {
-                self.gpu
+                self.ppu
                     .borrow_mut()
                     .write_u8(address - START_VRAM_ADDRESS, byte);
             }
@@ -245,9 +245,9 @@ mod tests {
     fn create_mmu() -> Mmu {
         let mbc = Rc::new(RefCell::new(RomOnly::new()));
         let input = Rc::new(RefCell::new(Input::new()));
-        let gpu = Rc::new(RefCell::new(Gpu::new()));
+        let ppu = Rc::new(RefCell::new(Ppu::new()));
 
-        let mut mmu = Mmu::new(mbc, input, gpu);
+        let mut mmu = Mmu::new(mbc, input, ppu);
         mmu.mode = Mode::Cartridge;
 
         mmu
@@ -274,7 +274,7 @@ mod tests {
         let block = [200, 201, 202];
 
         let mut mmu = create_mmu();
-        mmu.write_block(0x1010, &block);
+        mmu.write_block_u8(0x1010, &block);
 
         assert_eq!(200, mmu.read_u8(0x1010));
         assert_eq!(201, mmu.read_u8(0x1011));
