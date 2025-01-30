@@ -1,7 +1,7 @@
 use crate::{
     cart::Mbc,
-    gfx::Ppu,
     input::{Input, INPUT_ADDRESS},
+    ppu::Ppu,
     timer::Timer,
 };
 
@@ -207,7 +207,7 @@ impl Mapper for Mmu {
                 IF_ADDRESS => self.interrupt_flag.into(),
                 BANK_REG_ADDRESS => self.mode.into(),
                 _ => {
-                    tracing::warn!("read unmapped address: {:#06x}", address);
+                    tracing::warn!("read unmapped memory address: {:#06x}", address);
                     0
                 }
             },
@@ -220,9 +220,7 @@ impl Mapper for Mmu {
         match address {
             0..=END_MBC_ADDRESS => self.mbc.borrow_mut().write_u8(address, byte),
             START_VRAM_ADDRESS..=END_VRAM_ADDRESS => {
-                self.ppu
-                    .borrow_mut()
-                    .write_u8(address - START_VRAM_ADDRESS, byte);
+                self.ppu.borrow_mut().write_u8(address, byte);
             }
             INPUT_ADDRESS => self.input.borrow_mut().write_u8(address, byte),
             IE_ADDRESS => self.interrupt_enabled = byte.into(),

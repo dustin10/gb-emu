@@ -1,3 +1,5 @@
+use crate::mem::Mapper;
+
 use std::fmt::Display;
 
 /// The [`Color`] struct defines a color in the RGBA format with values of each component ranging
@@ -203,6 +205,8 @@ pub struct Layer {
     _kind: LayerKind,
     /// Array of [`Tile`]s that contain the pixel data for the layer.
     _tiles: [Tile; TILES_PER_LAYER],
+    /// Strategy used to address the tile data of the layer.
+    addressing_strategy: TileAddressingStrategy,
 }
 
 impl Layer {
@@ -211,6 +215,7 @@ impl Layer {
         Self {
             _kind: kind,
             _tiles: [Tile::default(); TILES_PER_LAYER],
+            addressing_strategy: TileAddressingStrategy::Unsigned,
         }
     }
     /// Creates a new background [`Layer`].
@@ -225,6 +230,22 @@ impl Layer {
     pub fn objects() -> Self {
         Self::with_kind(LayerKind::Objects)
     }
+    /// Sets the active [`TileAddressingStrategy`] for the layer.
+    pub fn set_addressing_strategy(&mut self, strategy: TileAddressingStrategy) {
+        self.addressing_strategy = strategy;
+    }
+}
+
+/// Enumerates the different methods that are available to address tile data for a [`Layer`].
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum TileAddressingStrategy {
+    /// The “$8000 method” uses $8000 as its base pointer and uses an unsigned addressing, meaning that tiles 0-127
+    /// are in block 0, and tiles 128-255 are in block 1.
+    Unsigned,
+    /// The “$8800 method” uses $9000 as its base pointer and uses a signed addressing, meaning that tiles 0-127 are
+    /// in block 2, and tiles -128 to -1 are in block 1; or, to put it differently, “$8800 addressing” takes tiles
+    /// 0-127 from block 2 and tiles 128-255 from block 1.
+    Signed,
 }
 
 /// The [`Ppu`] is responsible for managing the VRAM and drawing the graphics to the emulator
@@ -232,6 +253,16 @@ impl Layer {
 pub struct Ppu {
     /// Video memory of the emulator.
     vram: [u8; 8192],
+    /// Background layer tiles.
+    _background: Layer,
+    /// Window layer tiles.
+    _window: Layer,
+    /// Objects layer tiles.
+    _objects: Layer,
+    /// Tile map whose memory resides between 0x9800 and 0x9BFF.
+    tile_map_a: [u8; 1024],
+    /// Tile map whose memory resides between 0x9C00 and 0x9FFF.
+    tile_map_b: [u8; 1024],
 }
 
 impl Ppu {
@@ -239,23 +270,95 @@ impl Ppu {
     pub fn new() -> Self {
         Self::default()
     }
+}
+
+impl Mapper for Ppu {
     /// Reads a single byte from VRAM. The address given should be based at 0 rather than the start
     /// address of VRAM in the documentation which is 0x8000.
-    pub fn read_u8(&self, address: u16) -> u8 {
-        tracing::debug!("read VRAM address: {:#06x}", address);
-        self.vram[address as usize]
+    fn read_u8(&self, address: u16) -> u8 {
+        match address {
+            0x9800..=0x9BFF => {
+                tracing::debug!("read PPU tile map A address: {:#06x}", address);
+
+                let idx = address as usize - 0x9800;
+                assert!(idx < self.tile_map_a.len());
+
+                tracing::trace!("read tile map A index: {}", idx);
+
+                self.tile_map_a[idx]
+            }
+            0x9C00..=0x9FFF => {
+                tracing::debug!("read PPU tile map B address: {:#06x}", address);
+
+                let idx = address as usize - 0x9C00;
+                assert!(idx < self.tile_map_b.len());
+
+                tracing::trace!("read tile map B index: {}", idx);
+
+                self.tile_map_b[idx]
+            }
+            _ => {
+                tracing::debug!("read PPU VRAM address: {:#06x}", address);
+                self.vram[address as usize]
+            }
+        }
     }
     /// Writes a single byte to VRAM. The address given should be based at 0 rather than the start
     /// address of VRAM in the documentation which is 0x8000.
-    pub fn write_u8(&mut self, address: u16, byte: u8) {
-        tracing::debug!("write VRAM address: {:#06x} = {:#04x}", address, byte);
-        self.vram[address as usize] = byte;
+    fn write_u8(&mut self, address: u16, byte: u8) {
+        match address {
+            0x9800..=0x9BFF => {
+                tracing::debug!(
+                    "write PPU tile map A address: {:#06x} = {:#04x}",
+                    address,
+                    byte
+                );
+
+                let idx = address as usize - 0x9800;
+                assert!(idx < self.tile_map_b.len());
+
+                tracing::trace!("write tile map A index: {}", idx);
+
+                self.tile_map_a[idx] = byte;
+            }
+            0x9C00..=0x9FFF => {
+                tracing::debug!(
+                    "write PPU tile map B address: {:#06x} = {:#04x}",
+                    address,
+                    byte
+                );
+
+                let idx = address as usize - 0x9C00;
+                assert!(idx < self.tile_map_b.len());
+
+                tracing::trace!("write tile map B index: {}", idx);
+
+                self.tile_map_b[idx] = byte;
+            }
+            _ => {
+                tracing::debug!("write PPU VRAM address: {:#06x} = {:#04x}", address, byte);
+
+                let idx = address as usize - 0x8000;
+                assert!(idx < self.vram.len());
+
+                tracing::trace!("write VRAM index: {}", idx);
+
+                self.vram[idx] = byte;
+            }
+        }
     }
 }
 
 impl Default for Ppu {
-    /// Creates a default [`Ppu`].
+    /// Creates a default [`Ppu`] with all VRAM bytes set to zero.
     fn default() -> Self {
-        Self { vram: [0; 8192] }
+        Self {
+            vram: [0; 8192],
+            _background: Layer::background(),
+            _window: Layer::window(),
+            _objects: Layer::objects(),
+            tile_map_a: [0; 1024],
+            tile_map_b: [0; 1024],
+        }
     }
 }

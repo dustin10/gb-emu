@@ -1,8 +1,8 @@
 pub mod cart;
 pub mod cpu;
-pub mod gfx;
 pub mod input;
 pub mod mem;
+pub mod ppu;
 pub mod timer;
 pub mod util;
 
@@ -14,13 +14,13 @@ use crate::{
 };
 
 use bounded_vec_deque::BoundedVecDeque;
-use gfx::{ColorIndex, Pallette, Ppu};
 use imgui::{Context, TableColumnSetup, TreeNodeFlags, Ui};
 use imgui_glow_renderer::{
     glow::{self, HasContext},
     AutoRenderer,
 };
 use imgui_sdl2_support::SdlPlatform;
+use ppu::{ColorIndex, Pallette, Ppu};
 use sdl2::{event::Event, keyboard::Keycode, video::Window};
 use std::{
     cell::RefCell,
@@ -245,8 +245,12 @@ impl Emulator {
                 DebugMode::Disabled | DebugMode::Continue => self.cpu.step(&mut self.mmu),
                 DebugMode::Pause => 0,
                 DebugMode::Step => {
+                    let ticks = self.cpu.step(&mut self.mmu);
+
+                    tracing::trace!("debug_mode changed to Pause");
                     self.debug_mode = DebugMode::Pause;
-                    self.cpu.step(&mut self.mmu)
+
+                    ticks
                 }
             };
 
