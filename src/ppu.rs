@@ -115,12 +115,15 @@ impl Default for Pallette {
     }
 }
 
+/// Number of bytes in a [`Tile`].
+const NUM_TILE_BYTES: usize = 64;
+
 /// A [`Tile`] is a square consisting of an 8 x 8 grouping of pixels. Each pixel value contains an
 /// index into the [`Pallette`] that represents the color that should be used to render it.
 #[derive(Copy, Clone, Debug)]
 pub struct Tile {
     /// Raw pixel data of the tile containing the index into the color pallette for each pixel.
-    pixels: [u8; 64],
+    pixels: [u8; NUM_TILE_BYTES],
 }
 
 impl Tile {
@@ -162,77 +165,9 @@ impl Tile {
 impl Default for Tile {
     /// Creates a new [`Tile`] whose pixel data consists of all zeros.
     fn default() -> Self {
-        Self { pixels: [0; 64] }
-    }
-}
-
-/// Enumerates the different types of [`Layer`]s which are used to render the image onto the
-/// emulator screen.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum LayerKind {
-    /// The background is composed of a tilemap. A tilemap is a large grid of tiles. However,
-    /// tiles aren’t directly written to tilemaps, they merely contain references to the tiles.
-    /// This makes reusing tiles very cheap, both in CPU time and in required memory space, and
-    /// it is the main mechanism that helps work around the paltry 8 KiB of video RAM.
-    ///
-    /// The background can be made to scroll as a whole, writing to two hardware registers. This
-    /// makes scrolling very cheap.
-    Background,
-    /// The window is sort of a second background layer on top of the background. It is fairly limited:
-    /// it has no transparency, it’s always a rectangle and only the position of the top-left pixel can
-    /// be controlled.
-    ///
-    /// Possible usage include a fixed status bar in an otherwise scrolling game (e.g. Super Mario Land 2).
-    Window,
-    /// The background layer is useful for elements scrolling as a whole, but it’s impractical for objects
-    /// that need to move separately, such as the player.
-    ///
-    /// The objects layer is designed to fill this gap: objects are made of 1 or 2 stacked tiles
-    /// (8×8 or 8×16 pixels) and can be displayed anywhere on the screen.
-    Objects,
-}
-
-/// Number of tiles per layer. Each tile is an 8 x 8 group of pixels so divide the screen width and
-/// height by 8 and then multiply then together to get the total number of tiles to store for each
-/// layer.
-const TILES_PER_LAYER: usize = (160 / 8) * (144 / 8);
-
-/// A [`Layer`] is a grid of [`Tile`]s which represent a layer of pixels in the final scene
-/// rendered to the emulator display.
-#[derive(Debug)]
-pub struct Layer {
-    /// [`LayerKind`] for the layer.
-    _kind: LayerKind,
-    /// Array of [`Tile`]s that contain the pixel data for the layer.
-    _tiles: [Tile; TILES_PER_LAYER],
-    /// Strategy used to address the tile data of the layer.
-    addressing_strategy: TileAddressingStrategy,
-}
-
-impl Layer {
-    /// Creates a new [`Layer`] of the specified [`LayerKind`].
-    fn with_kind(kind: LayerKind) -> Self {
         Self {
-            _kind: kind,
-            _tiles: [Tile::default(); TILES_PER_LAYER],
-            addressing_strategy: TileAddressingStrategy::Unsigned,
+            pixels: [0; NUM_TILE_BYTES],
         }
-    }
-    /// Creates a new background [`Layer`].
-    pub fn background() -> Self {
-        Self::with_kind(LayerKind::Background)
-    }
-    /// Creates a new window [`Layer`].
-    pub fn window() -> Self {
-        Self::with_kind(LayerKind::Window)
-    }
-    /// Creates a new objects [`Layer`].
-    pub fn objects() -> Self {
-        Self::with_kind(LayerKind::Objects)
-    }
-    /// Sets the active [`TileAddressingStrategy`] for the layer.
-    pub fn set_addressing_strategy(&mut self, strategy: TileAddressingStrategy) {
-        self.addressing_strategy = strategy;
     }
 }
 
@@ -248,21 +183,37 @@ pub enum TileAddressingStrategy {
     Signed,
 }
 
+impl From<u8> for TileAddressingStrategy {
+    /// Convertes a [`u8`] to the appropriate [`TileAddressingStrategy`] value.
+    fn from(value: u8) -> Self {
+        match value {
+            0 => TileAddressingStrategy::Signed,
+            _ => TileAddressingStrategy::Unsigned,
+        }
+    }
+}
+
+/// Number of bytes for the VRAM data excluding the two tile maps.
+const VRAM_NUM_BYTES: usize = 0x97FF - 0x8000 + 1;
+
+/// Number of bytes for the OAM data.
+const OAM_NUM_BYTES: usize = 0xFE9F - 0xFE00 + 1;
+
+/// Number of bytes for the tile map data.
+const TILE_MAP_NUM_BYTES: usize = 0x9BFF - 0x9800 + 1;
+
 /// The [`Ppu`] is responsible for managing the VRAM and drawing the graphics to the emulator
 /// screen.
+#[derive(Debug)]
 pub struct Ppu {
-    /// Video memory of the emulator.
-    vram: [u8; 8192],
-    /// Background layer tiles.
-    _background: Layer,
-    /// Window layer tiles.
-    _window: Layer,
-    /// Objects layer tiles.
-    _objects: Layer,
+    /// Video memory of the emulator. This is where the tile data is stored.
+    vram: [u8; VRAM_NUM_BYTES],
+    /// Object Attribute Memory (OAM) of the emulator.
+    oam: [u8; OAM_NUM_BYTES],
     /// Tile map whose memory resides between 0x9800 and 0x9BFF.
-    tile_map_a: [u8; 1024],
+    tile_map_one: [u8; TILE_MAP_NUM_BYTES],
     /// Tile map whose memory resides between 0x9C00 and 0x9FFF.
-    tile_map_b: [u8; 1024],
+    tile_map_two: [u8; TILE_MAP_NUM_BYTES],
 }
 
 impl Ppu {
@@ -278,27 +229,43 @@ impl Mapper for Ppu {
     fn read_u8(&self, address: u16) -> u8 {
         match address {
             0x9800..=0x9BFF => {
-                tracing::debug!("read PPU tile map A address: {:#06x}", address);
+                tracing::debug!("read PPU tile map one address: {:#06x}", address);
 
                 let idx = address as usize - 0x9800;
-                assert!(idx < self.tile_map_a.len());
+                assert!(idx < self.tile_map_one.len());
 
-                tracing::trace!("read tile map A index: {}", idx);
+                tracing::trace!("read tile map one index: {}", idx);
 
-                self.tile_map_a[idx]
+                self.tile_map_one[idx]
             }
             0x9C00..=0x9FFF => {
-                tracing::debug!("read PPU tile map B address: {:#06x}", address);
+                tracing::debug!("read PPU tile map two address: {:#06x}", address);
 
                 let idx = address as usize - 0x9C00;
-                assert!(idx < self.tile_map_b.len());
+                assert!(idx < self.tile_map_two.len());
 
-                tracing::trace!("read tile map B index: {}", idx);
+                tracing::trace!("read tile map two index: {}", idx);
 
-                self.tile_map_b[idx]
+                self.tile_map_two[idx]
+            }
+            0xFE00..=0xFE9F => {
+                tracing::debug!("read PPU OAM address: {:#06x}", address);
+
+                let idx = address as usize - 0xFE00;
+                assert!(idx < self.oam.len());
+
+                tracing::trace!("read OAM index: {}", idx);
+
+                self.oam[idx]
             }
             _ => {
                 tracing::debug!("read PPU VRAM address: {:#06x}", address);
+
+                let idx = address as usize - 0x8000;
+                assert!(idx < self.vram.len());
+
+                tracing::trace!("read VRAM index: {}", idx);
+
                 self.vram[address as usize]
             }
         }
@@ -315,11 +282,11 @@ impl Mapper for Ppu {
                 );
 
                 let idx = address as usize - 0x9800;
-                assert!(idx < self.tile_map_b.len());
+                assert!(idx < self.tile_map_one.len());
 
-                tracing::trace!("write tile map A index: {}", idx);
+                tracing::trace!("write tile map one index: {}", idx);
 
-                self.tile_map_a[idx] = byte;
+                self.tile_map_one[idx] = byte;
             }
             0x9C00..=0x9FFF => {
                 tracing::debug!(
@@ -329,11 +296,21 @@ impl Mapper for Ppu {
                 );
 
                 let idx = address as usize - 0x9C00;
-                assert!(idx < self.tile_map_b.len());
+                assert!(idx < self.tile_map_two.len());
 
-                tracing::trace!("write tile map B index: {}", idx);
+                tracing::trace!("write tile map two index: {}", idx);
 
-                self.tile_map_b[idx] = byte;
+                self.tile_map_two[idx] = byte;
+            }
+            0xFE00..=0xFE9F => {
+                tracing::debug!("write PPU OAM address: {:#06x} = {:#04x}", address, byte);
+
+                let idx = address as usize - 0xFE00;
+                assert!(idx < self.oam.len());
+
+                tracing::trace!("write OAM index: {}", idx);
+
+                self.oam[idx] = byte;
             }
             _ => {
                 tracing::debug!("write PPU VRAM address: {:#06x} = {:#04x}", address, byte);
@@ -350,15 +327,13 @@ impl Mapper for Ppu {
 }
 
 impl Default for Ppu {
-    /// Creates a default [`Ppu`] with all VRAM bytes set to zero.
+    /// Creates a default [`Ppu`] with all bytes of it's memory set to zero.
     fn default() -> Self {
         Self {
-            vram: [0; 8192],
-            _background: Layer::background(),
-            _window: Layer::window(),
-            _objects: Layer::objects(),
-            tile_map_a: [0; 1024],
-            tile_map_b: [0; 1024],
+            vram: [0; VRAM_NUM_BYTES],
+            oam: [0; OAM_NUM_BYTES],
+            tile_map_one: [0; TILE_MAP_NUM_BYTES],
+            tile_map_two: [0; TILE_MAP_NUM_BYTES],
         }
     }
 }

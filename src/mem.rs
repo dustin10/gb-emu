@@ -111,6 +111,12 @@ const START_VRAM_ADDRESS: u16 = 0x8000;
 /// End of the addressable space for VRAM.
 const END_VRAM_ADDRESS: u16 = 0x9FFF;
 
+/// Start of the addressable space for OAM.
+const START_OAM_ADDRESS: u16 = 0xFE00;
+
+/// End of the addressable space for OAM.
+const END_OAM_ADDRESS: u16 = 0xFE9F;
+
 /// Defines a simple interface for reading and writing bytes of memory.
 pub trait Mapper {
     /// Reads a single byte from memory at the given address.
@@ -199,13 +205,12 @@ impl Mapper for Mmu {
             },
             Mode::Cartridge => match address {
                 0..=END_MBC_ADDRESS => self.mbc.borrow().read_u8(address),
-                START_VRAM_ADDRESS..=END_VRAM_ADDRESS => {
-                    self.ppu.borrow().read_u8(address - START_VRAM_ADDRESS)
-                }
+                START_VRAM_ADDRESS..=END_VRAM_ADDRESS => self.ppu.borrow().read_u8(address),
                 INPUT_ADDRESS => self.input.borrow().read_u8(address),
                 IE_ADDRESS => self.interrupt_enabled.into(),
                 IF_ADDRESS => self.interrupt_flag.into(),
                 BANK_REG_ADDRESS => self.mode.into(),
+                START_OAM_ADDRESS..=END_OAM_ADDRESS => self.ppu.borrow().read_u8(address),
                 _ => {
                     tracing::warn!("read unmapped memory address: {:#06x}", address);
                     0
@@ -228,6 +233,9 @@ impl Mapper for Mmu {
             BANK_REG_ADDRESS => {
                 tracing::debug!("mmu mode switched to {}", Mode::Cartridge);
                 self.mode = Mode::Cartridge;
+            }
+            START_OAM_ADDRESS..=END_OAM_ADDRESS => {
+                self.ppu.borrow_mut().write_u8(address, byte);
             }
             _ => tracing::warn!("write to unmapped address: {:06x}", address),
         }
