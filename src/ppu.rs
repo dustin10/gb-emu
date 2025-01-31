@@ -193,6 +193,144 @@ impl From<u8> for TileAddressingStrategy {
     }
 }
 
+/// Enumerates the available tile maps for the background and window layers.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum TileMap {
+    Zero,
+    One,
+}
+
+impl From<u8> for TileMap {
+    /// Convertes a [`u8`] to the appropriate [`TileMap`] value.
+    fn from(value: u8) -> Self {
+        match value {
+            0 => TileMap::Zero,
+            _ => TileMap::One,
+        }
+    }
+}
+
+/// Enumerates the available object sizes.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ObjectSize {
+    /// Represents 8 x 8 pixels.
+    EightByEight,
+    /// Represents 8 x 16 pixels.
+    EightBySixteen,
+}
+
+impl From<u8> for ObjectSize {
+    /// Convertes a [`u8`] to the appropriate [`ObjectSize`] value.
+    fn from(value: u8) -> Self {
+        match value {
+            0 => ObjectSize::EightByEight,
+            _ => ObjectSize::EightBySixteen,
+        }
+    }
+}
+
+/// Bit position of the background and window enabled LCD flag.
+const LCD_FLAGS_BG_WIN_ENABLED_BIT_POSITION: u8 = 1;
+
+/// Bit position of the objects enabled LCD flag.
+const LCD_FLAGS_OBJ_ENABLED_BIT_POSITION: u8 = 1;
+
+/// Bit position of the objects size LCD flag.
+const LCD_FLAGS_OBJ_SIZE_BIT_POSITION: u8 = 2;
+
+/// Bit position of the background tile map LCD flag.
+const LCD_FLAGS_BG_TILE_MAP_BIT_POSITION: u8 = 3;
+
+/// Bit position of the background and window addressing strategy LCD flag.
+const LCD_FLAGS_BG_WIN_ADDRESSING_BIT_POSITION: u8 = 4;
+
+/// Bit position of the window enabled LCD flag.
+const LCD_FLAGS_WIN_ENABLED_BIT_POSITION: u8 = 5;
+
+/// Bit position of the window tile map LCD flag.
+const LCD_FLAGS_WIN_TILE_MAP_BIT_POSITION: u8 = 6;
+
+/// Bit position of the LCD and PPU enabled LCD flag.
+const LCD_FLAGS_LCD_ENABLED_BIT_POSITION: u8 = 7;
+
+/// Eases the special handling required for the LCD byte which uses the 8 bits of the byte for the
+/// following flags.
+///
+/// 76543210 <- Bit position
+/// --------
+/// 00000000
+/// ||||||||
+/// |||||||- background and window enabled
+/// ||||||-- ojects enabled
+/// ||||| -- objects size
+/// ||||---- background tile map area
+/// |||----- background and window tile addressing strategy
+/// ||------ window enabled
+/// |------- window tile map area
+/// -------- LCD and PPU enabled
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LcdFlags(u8);
+
+impl LcdFlags {
+    /// Returns `true` if the LCD and PPU are currently enabled.
+    pub fn lcd_ppu_enabled(&self) -> bool {
+        (self.0 >> LCD_FLAGS_LCD_ENABLED_BIT_POSITION) & 1 != 0
+    }
+    /// Returns the [`TileMap`] that the window should be using.
+    pub fn win_tile_map(&self) -> TileMap {
+        let value = (self.0 >> LCD_FLAGS_WIN_TILE_MAP_BIT_POSITION) & 1;
+        value.into()
+    }
+    /// Returns `true` if the window is currently enabled.
+    pub fn win_enabled(&self) -> bool {
+        (self.0 >> LCD_FLAGS_WIN_ENABLED_BIT_POSITION) & 1 != 0
+    }
+    /// Returns the [`TileAddressingStrategy`] that the background and window should be using.
+    pub fn bg_win_addressing_strategy(&self) -> TileAddressingStrategy {
+        let value = (self.0 >> LCD_FLAGS_BG_WIN_ADDRESSING_BIT_POSITION) & 1;
+        value.into()
+    }
+    /// Returns the [`TileMap`] that the background should be using.
+    pub fn bg_tile_map(&self) -> TileMap {
+        let value = (self.0 >> LCD_FLAGS_BG_TILE_MAP_BIT_POSITION) & 1;
+        value.into()
+    }
+    /// Returns the current [`ObjectSize`] that should be used for objects.
+    pub fn obj_size(&self) -> ObjectSize {
+        let value = (self.0 >> LCD_FLAGS_OBJ_SIZE_BIT_POSITION) & 1;
+        value.into()
+    }
+    /// Retruns `true` if objects are currently enabled.
+    pub fn obj_enabled(&self) -> bool {
+        (self.0 >> LCD_FLAGS_OBJ_ENABLED_BIT_POSITION) & 1 != 0
+    }
+    /// Return `true` if the window is currently enabled.
+    pub fn bg_win_enabled(&self) -> bool {
+        (self.0 >> LCD_FLAGS_BG_WIN_ENABLED_BIT_POSITION) & 1 != 0
+    }
+}
+
+impl LcdFlags {
+    /// Creates a new default [`LcdFlags`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl From<u8> for LcdFlags {
+    /// Converts the given [`u8`] into a [`LcdFlags`].
+    fn from(value: u8) -> Self {
+        Self(value & 0xF0)
+    }
+}
+
+impl From<LcdFlags> for u8 {
+    /// Converts the given [`LcdFlags`] into a [`u8`].
+    fn from(value: LcdFlags) -> Self {
+        value.0
+    }
+}
+
 /// Number of bytes for the VRAM data excluding the two tile maps.
 const VRAM_NUM_BYTES: usize = 0x97FF - 0x8000 + 1;
 
@@ -211,9 +349,11 @@ pub struct Ppu {
     /// Object Attribute Memory (OAM) of the emulator.
     oam: [u8; OAM_NUM_BYTES],
     /// Tile map whose memory resides between 0x9800 and 0x9BFF.
-    tile_map_one: [u8; TILE_MAP_NUM_BYTES],
+    tile_map_zero: [u8; TILE_MAP_NUM_BYTES],
     /// Tile map whose memory resides between 0x9C00 and 0x9FFF.
-    tile_map_two: [u8; TILE_MAP_NUM_BYTES],
+    tile_map_one: [u8; TILE_MAP_NUM_BYTES],
+    /// LCD control flags.
+    lcd: LcdFlags,
 }
 
 impl Ppu {
@@ -232,21 +372,21 @@ impl Mapper for Ppu {
                 tracing::debug!("read PPU tile map one address: {:#06x}", address);
 
                 let idx = address as usize - 0x9800;
-                assert!(idx < self.tile_map_one.len());
+                assert!(idx < self.tile_map_zero.len());
 
                 tracing::trace!("read tile map one index: {}", idx);
 
-                self.tile_map_one[idx]
+                self.tile_map_zero[idx]
             }
             0x9C00..=0x9FFF => {
                 tracing::debug!("read PPU tile map two address: {:#06x}", address);
 
                 let idx = address as usize - 0x9C00;
-                assert!(idx < self.tile_map_two.len());
+                assert!(idx < self.tile_map_one.len());
 
                 tracing::trace!("read tile map two index: {}", idx);
 
-                self.tile_map_two[idx]
+                self.tile_map_one[idx]
             }
             0xFE00..=0xFE9F => {
                 tracing::debug!("read PPU OAM address: {:#06x}", address);
@@ -257,6 +397,11 @@ impl Mapper for Ppu {
                 tracing::trace!("read OAM index: {}", idx);
 
                 self.oam[idx]
+            }
+            0xFF40 => {
+                tracing::debug!("read LCD control");
+
+                self.lcd.into()
             }
             _ => {
                 tracing::debug!("read PPU VRAM address: {:#06x}", address);
@@ -282,11 +427,11 @@ impl Mapper for Ppu {
                 );
 
                 let idx = address as usize - 0x9800;
-                assert!(idx < self.tile_map_one.len());
+                assert!(idx < self.tile_map_zero.len());
 
                 tracing::trace!("write tile map one index: {}", idx);
 
-                self.tile_map_one[idx] = byte;
+                self.tile_map_zero[idx] = byte;
             }
             0x9C00..=0x9FFF => {
                 tracing::debug!(
@@ -296,11 +441,11 @@ impl Mapper for Ppu {
                 );
 
                 let idx = address as usize - 0x9C00;
-                assert!(idx < self.tile_map_two.len());
+                assert!(idx < self.tile_map_one.len());
 
                 tracing::trace!("write tile map two index: {}", idx);
 
-                self.tile_map_two[idx] = byte;
+                self.tile_map_one[idx] = byte;
             }
             0xFE00..=0xFE9F => {
                 tracing::debug!("write PPU OAM address: {:#06x} = {:#04x}", address, byte);
@@ -311,6 +456,11 @@ impl Mapper for Ppu {
                 tracing::trace!("write OAM index: {}", idx);
 
                 self.oam[idx] = byte;
+            }
+            0xFF40 => {
+                tracing::debug!("write LCD control");
+
+                self.lcd = byte.into();
             }
             _ => {
                 tracing::debug!("write PPU VRAM address: {:#06x} = {:#04x}", address, byte);
@@ -332,8 +482,9 @@ impl Default for Ppu {
         Self {
             vram: [0; VRAM_NUM_BYTES],
             oam: [0; OAM_NUM_BYTES],
+            tile_map_zero: [0; TILE_MAP_NUM_BYTES],
             tile_map_one: [0; TILE_MAP_NUM_BYTES],
-            tile_map_two: [0; TILE_MAP_NUM_BYTES],
+            lcd: LcdFlags::default(),
         }
     }
 }
