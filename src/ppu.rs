@@ -229,32 +229,32 @@ impl From<u8> for ObjectSize {
     }
 }
 
-/// Bit position of the background and window enabled LCD flag.
-const LCD_FLAGS_BG_WIN_ENABLED_BIT_POSITION: u8 = 1;
+/// Bit position of the background and window enabled LCD control byte.
+const LCD_CONTROL_BG_WIN_ENABLED_BIT_POSITION: u8 = 1;
 
-/// Bit position of the objects enabled LCD flag.
-const LCD_FLAGS_OBJ_ENABLED_BIT_POSITION: u8 = 1;
+/// Bit position of the objects enabled LCD control byte.
+const LCD_CONTROL_OBJ_ENABLED_BIT_POSITION: u8 = 1;
 
-/// Bit position of the objects size LCD flag.
-const LCD_FLAGS_OBJ_SIZE_BIT_POSITION: u8 = 2;
+/// Bit position of the objects size LCD control byte.
+const LCD_CONTROL_OBJ_SIZE_BIT_POSITION: u8 = 2;
 
-/// Bit position of the background tile map LCD flag.
-const LCD_FLAGS_BG_TILE_MAP_BIT_POSITION: u8 = 3;
+/// Bit position of the background tile map LCD control byte.
+const LCD_CONTROL_BG_TILE_MAP_BIT_POSITION: u8 = 3;
 
-/// Bit position of the background and window addressing strategy LCD flag.
-const LCD_FLAGS_BG_WIN_ADDRESSING_BIT_POSITION: u8 = 4;
+/// Bit position of the background and window addressing strategy LCD control byte.
+const LCD_CONTROL_BG_WIN_ADDRESSING_BIT_POSITION: u8 = 4;
 
-/// Bit position of the window enabled LCD flag.
-const LCD_FLAGS_WIN_ENABLED_BIT_POSITION: u8 = 5;
+/// Bit position of the window enabled LCD control byte.
+const LCD_CONTROL_WIN_ENABLED_BIT_POSITION: u8 = 5;
 
-/// Bit position of the window tile map LCD flag.
-const LCD_FLAGS_WIN_TILE_MAP_BIT_POSITION: u8 = 6;
+/// Bit position of the window tile map LCD control byte.
+const LCD_CONTROL_WIN_TILE_MAP_BIT_POSITION: u8 = 6;
 
-/// Bit position of the LCD and PPU enabled LCD flag.
-const LCD_FLAGS_LCD_ENABLED_BIT_POSITION: u8 = 7;
+/// Bit position of the LCD and PPU enabled LCD control byte.
+const LCD_CONTROL_LCD_ENABLED_BIT_POSITION: u8 = 7;
 
-/// Eases the special handling required for the LCD byte which uses the 8 bits of the byte for the
-/// following flags.
+/// Eases the special handling required for the LCD control byte which uses the 8 bits of the byte
+/// for the following flags.
 ///
 /// 76543210 <- Bit position
 /// --------
@@ -269,64 +269,136 @@ const LCD_FLAGS_LCD_ENABLED_BIT_POSITION: u8 = 7;
 /// |------- window tile map area
 /// -------- LCD and PPU enabled
 #[derive(Clone, Copy, Debug, Default)]
-pub struct LcdFlags(u8);
+pub struct LcdControl(u8);
 
-impl LcdFlags {
+impl LcdControl {
+    /// Creates a new default [`LcdControl`].
+    pub fn new() -> Self {
+        Self::default()
+    }
     /// Returns `true` if the LCD and PPU are currently enabled.
     pub fn lcd_ppu_enabled(&self) -> bool {
-        (self.0 >> LCD_FLAGS_LCD_ENABLED_BIT_POSITION) & 1 != 0
+        (self.0 >> LCD_CONTROL_LCD_ENABLED_BIT_POSITION) & 1 != 0
     }
     /// Returns the [`TileMap`] that the window should be using.
     pub fn win_tile_map(&self) -> TileMap {
-        let value = (self.0 >> LCD_FLAGS_WIN_TILE_MAP_BIT_POSITION) & 1;
+        let value = (self.0 >> LCD_CONTROL_WIN_TILE_MAP_BIT_POSITION) & 1;
         value.into()
     }
     /// Returns `true` if the window is currently enabled.
     pub fn win_enabled(&self) -> bool {
-        (self.0 >> LCD_FLAGS_WIN_ENABLED_BIT_POSITION) & 1 != 0
+        (self.0 >> LCD_CONTROL_WIN_ENABLED_BIT_POSITION) & 1 != 0
     }
     /// Returns the [`TileAddressingStrategy`] that the background and window should be using.
     pub fn bg_win_addressing_strategy(&self) -> TileAddressingStrategy {
-        let value = (self.0 >> LCD_FLAGS_BG_WIN_ADDRESSING_BIT_POSITION) & 1;
+        let value = (self.0 >> LCD_CONTROL_BG_WIN_ADDRESSING_BIT_POSITION) & 1;
         value.into()
     }
     /// Returns the [`TileMap`] that the background should be using.
     pub fn bg_tile_map(&self) -> TileMap {
-        let value = (self.0 >> LCD_FLAGS_BG_TILE_MAP_BIT_POSITION) & 1;
+        let value = (self.0 >> LCD_CONTROL_BG_TILE_MAP_BIT_POSITION) & 1;
         value.into()
     }
     /// Returns the current [`ObjectSize`] that should be used for objects.
     pub fn obj_size(&self) -> ObjectSize {
-        let value = (self.0 >> LCD_FLAGS_OBJ_SIZE_BIT_POSITION) & 1;
+        let value = (self.0 >> LCD_CONTROL_OBJ_SIZE_BIT_POSITION) & 1;
         value.into()
     }
     /// Retruns `true` if objects are currently enabled.
     pub fn obj_enabled(&self) -> bool {
-        (self.0 >> LCD_FLAGS_OBJ_ENABLED_BIT_POSITION) & 1 != 0
+        (self.0 >> LCD_CONTROL_OBJ_ENABLED_BIT_POSITION) & 1 != 0
     }
     /// Return `true` if the window is currently enabled.
     pub fn bg_win_enabled(&self) -> bool {
-        (self.0 >> LCD_FLAGS_BG_WIN_ENABLED_BIT_POSITION) & 1 != 0
+        (self.0 >> LCD_CONTROL_BG_WIN_ENABLED_BIT_POSITION) & 1 != 0
     }
 }
 
-impl LcdFlags {
-    /// Creates a new default [`LcdFlags`].
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl From<u8> for LcdFlags {
-    /// Converts the given [`u8`] into a [`LcdFlags`].
+impl From<u8> for LcdControl {
+    /// Converts the given [`u8`] into a [`LcdControl`].
     fn from(value: u8) -> Self {
         Self(value & 0xF0)
     }
 }
 
-impl From<LcdFlags> for u8 {
-    /// Converts the given [`LcdFlags`] into a [`u8`].
-    fn from(value: LcdFlags) -> Self {
+impl From<LcdControl> for u8 {
+    /// Converts the given [`LcdControl`] into a [`u8`].
+    fn from(value: LcdControl) -> Self {
+        value.0
+    }
+}
+
+/// Bit position of the LYC == LC bit in the LCD status byte.
+const LCD_STATUS_LYC_LY_EQ_BIT_POSITION: u8 = 2;
+
+/// Bit position of the mode 0 interrupt select bit in the LCD status byte.
+const LCD_STATUS_MODDE0_INT_SELECT_BIT_POSITION: u8 = 3;
+
+/// Bit position of the mode 1 interrupt select bit in the LCD status byte.
+const LCD_STATUS_MODDE1_INT_SELECT_BIT_POSITION: u8 = 4;
+
+/// Bit position of the mode 2 interrupt select bit in the LCD status byte.
+const LCD_STATUS_MODDE2_INT_SELECT_BIT_POSITION: u8 = 5;
+
+/// Bit position of the LCY interrupt select bit in the LCD status byte.
+const LCD_STATUS_LCY_INT_SELECT_BIT_POSITION: u8 = 6;
+
+/// Eases the special handling required for the LCD status byte which uses the 8 bits of the byte
+/// for the following flags.
+///
+/// 76543210 <- Bit position
+/// --------
+/// 00000000
+///  |||||||
+///  |||||||
+///  |||||-- PPU mode (bits 0 and 1)
+///  |||| -- LYC == LY
+///  |||---- Mode 0 int select
+///  ||----- Mode 1 int select
+///  |------ Mode 2 int select
+///  ------- LYC int select
+///
+///  Bit 7 is unused.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LcdStatus(u8);
+
+impl LcdStatus {
+    /// Creates a new default [`LcdStatus`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+    /// Returns true if the LCY equals LY bit is set.
+    pub fn lyc_ly_eq(&self) -> bool {
+        (self.0 >> LCD_STATUS_LYC_LY_EQ_BIT_POSITION) & 1 != 0
+    }
+    /// Returns true if the mode 0 interrupt select bit is set.
+    pub fn mode0_int_select(&self) -> bool {
+        (self.0 >> LCD_STATUS_MODDE0_INT_SELECT_BIT_POSITION) & 1 != 0
+    }
+    /// Returns true if the mode 1 interrupt select bit is set.
+    pub fn mode1_int_select(&self) -> bool {
+        (self.0 >> LCD_STATUS_MODDE1_INT_SELECT_BIT_POSITION) & 1 != 0
+    }
+    /// Returns true if the mode 2 interrupt select bit is set.
+    pub fn mode2_int_select(&self) -> bool {
+        (self.0 >> LCD_STATUS_MODDE2_INT_SELECT_BIT_POSITION) & 1 != 0
+    }
+    /// Returns true if the LCY interrupt select bit is set.
+    pub fn lcy_int_select(&self) -> bool {
+        (self.0 >> LCD_STATUS_LCY_INT_SELECT_BIT_POSITION) & 1 != 0
+    }
+}
+
+impl From<u8> for LcdStatus {
+    /// Converts the given [`u8`] into a [`LcdStatus`].
+    fn from(value: u8) -> Self {
+        Self(value & 0xF0)
+    }
+}
+
+impl From<LcdStatus> for u8 {
+    /// Converts the given [`LcdStatus`] into a [`u8`].
+    fn from(value: LcdStatus) -> Self {
         value.0
     }
 }
@@ -352,8 +424,14 @@ pub struct Ppu {
     tile_map_zero: [u8; TILE_MAP_NUM_BYTES],
     /// Tile map whose memory resides between 0x9C00 and 0x9FFF.
     tile_map_one: [u8; TILE_MAP_NUM_BYTES],
+    /// Indicates the current horizontal line, which might be about to be drawn, being drawn, or just
+    /// been drawn. LY can hold any value from 0 to 153, with values from 144 to 153 indicating the
+    /// VBlank period.
+    ly: u8,
     /// LCD control flags.
-    lcd: LcdFlags,
+    lcd_ctrl: LcdControl,
+    /// LCD status flags.
+    lcd_status: LcdStatus,
 }
 
 impl Ppu {
@@ -401,7 +479,20 @@ impl Mapper for Ppu {
             0xFF40 => {
                 tracing::debug!("read LCD control");
 
-                self.lcd.into()
+                self.lcd_ctrl.into()
+            }
+            0xFF41 => {
+                tracing::debug!("read LCD status");
+
+                self.lcd_status.into()
+            }
+            0xF44 => {
+                tracing::debug!("read LY");
+
+                self.ly
+            }
+            0xFF45 => {
+                todo!()
             }
             _ => {
                 tracing::debug!("read PPU VRAM address: {:#06x}", address);
@@ -460,7 +551,18 @@ impl Mapper for Ppu {
             0xFF40 => {
                 tracing::debug!("write LCD control");
 
-                self.lcd = byte.into();
+                self.lcd_ctrl = byte.into();
+            }
+            0xFF41 => {
+                tracing::debug!("write LCD status");
+
+                self.lcd_status = byte.into();
+            }
+            0xFF44 => {
+                tracing::warn!("attempt to write LY");
+            }
+            0xFF45 => {
+                todo!()
             }
             _ => {
                 tracing::debug!("write PPU VRAM address: {:#06x} = {:#04x}", address, byte);
@@ -484,7 +586,9 @@ impl Default for Ppu {
             oam: [0; OAM_NUM_BYTES],
             tile_map_zero: [0; TILE_MAP_NUM_BYTES],
             tile_map_one: [0; TILE_MAP_NUM_BYTES],
-            lcd: LcdFlags::default(),
+            ly: 0,
+            lcd_ctrl: LcdControl::default(),
+            lcd_status: LcdStatus::default(),
         }
     }
 }

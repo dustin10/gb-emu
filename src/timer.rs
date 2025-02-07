@@ -45,7 +45,7 @@ impl Mapper for Timer {
             TIMA_ADDRESS => self.tima,
             TMA_ADDRESS => self.tma,
             TAC_ADDRESS => self.tac,
-            _ => panic!("not yet implemented"),
+            _ => todo!("not yet implemented"),
         }
     }
     /// Writes the timer-related value mapped to the given address.
@@ -56,7 +56,7 @@ impl Mapper for Timer {
             TIMA_ADDRESS => self.tima = byte,
             TMA_ADDRESS => self.tma = byte,
             TAC_ADDRESS => self.tac = byte,
-            _ => panic!("not yet implemented"),
+            _ => todo!("not yet implemented"),
         }
     }
 }
