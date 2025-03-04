@@ -33,7 +33,7 @@ impl Registers {
     pub fn af(&self) -> u16 {
         let f: u8 = self.f.into();
 
-        (self.a as u16) << 8 | f as u16
+        ((self.a as u16) << 8) | f as u16
     }
     /// Sets the values of the `A` and `F` registers by treating them as one 16 bit value.
     pub fn set_af(&mut self, value: u16) {
@@ -42,7 +42,7 @@ impl Registers {
     }
     /// Returns the combined value of the `B` and `C` registers.
     pub fn bc(&self) -> u16 {
-        (self.b as u16) << 8 | self.c as u16
+        ((self.b as u16) << 8) | self.c as u16
     }
     /// Sets the values of the `B` and `C` registers by treating them as one 16 bit value.
     pub fn set_bc(&mut self, value: u16) {
@@ -51,7 +51,7 @@ impl Registers {
     }
     /// Returns the combined value of the `D` and `E` registers.
     pub fn de(&self) -> u16 {
-        (self.d as u16) << 8 | self.e as u16
+        ((self.d as u16) << 8) | self.e as u16
     }
     /// Sets the values of the `D` and `E` registers by treating them as one 16 bit value.
     pub fn set_de(&mut self, value: u16) {
@@ -60,7 +60,7 @@ impl Registers {
     }
     /// Returns the combined value of the `H` and `L` registers.
     pub fn hl(&self) -> u16 {
-        (self.h as u16) << 8 | self.l as u16
+        ((self.h as u16) << 8) | self.l as u16
     }
     /// Sets the values of the `H` and `L` registers by treating them as one 16 bit value.
     pub fn set_hl(&mut self, value: u16) {
@@ -3451,7 +3451,7 @@ impl Cpu {
         let low = memory.read_u8(address);
         let high = memory.read_u8(address + 1);
 
-        (high as u16) << 8 | low as u16
+        ((high as u16) << 8) | low as u16
     }
 }
 
