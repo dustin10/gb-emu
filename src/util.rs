@@ -89,8 +89,8 @@ impl LogEntry {
     }
 }
 
-/// A [`Layer`] implementation which captures logs and buffers them in memory for display in the
-/// UI.
+/// A tracing [`Layer`] implementation which captures logs and buffers them in memory for display
+/// in the UI.
 #[derive(Debug)]
 pub struct MessageCaptureLayer {
     /// Buffered log messages with a bounded size.
