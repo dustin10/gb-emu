@@ -11,10 +11,10 @@ rust-version = "1.85"
 [workspace]
 
 [dependencies]
-anyhow = "1.0.97"
+anyhow = "1.0.98"
 bounded-vec-deque = "0.1.1"
-chrono = "0.4.40"
-clap = { version = "4.5.35", features = ["derive"] }
+chrono = "0.4.41"
+clap = { version = "4.5.40", features = ["derive"] }
 imgui = { version = "0.12.0", features = ["tables-api"] }
 imgui-glow-renderer = "0.13.0"
 imgui-sdl2-support = "0.13.0"
