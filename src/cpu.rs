@@ -1373,10 +1373,10 @@ impl Cpu {
         if let Some(instruction) = instruction {
             // enabling ime with the EI instruction is delayed by one step so check previous
             // instruction and enable if required
-            if let Some(prev_instruction) = self.history.front() {
-                if prev_instruction.operation == Operation::EI {
-                    self.ime = true;
-                }
+            if let Some(prev_instruction) = self.history.front()
+                && prev_instruction.operation == Operation::EI
+            {
+                self.ime = true;
             }
 
             self.registers.pc = self.registers.pc.wrapping_add(instruction.num_bytes);
