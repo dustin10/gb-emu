@@ -55,7 +55,7 @@ impl Display for ColorIndex {
 
 /// The [`Pallette`] struct contains the set of [`Color`]s that will be used to render the frame
 /// onto the emulator screen.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Pallette {
     /// Background color correponding to 0.
     bg: Color,
@@ -486,7 +486,7 @@ impl Mapper for Ppu {
 
                 self.lcd_status.into()
             }
-            0xF44 => {
+            0xFF44 => {
                 tracing::debug!("read LY");
 
                 self.ly

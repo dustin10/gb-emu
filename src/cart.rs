@@ -88,7 +88,10 @@ pub enum CartridgeKind {
     MBC1 { ram: bool, battery: bool },
 }
 
-impl From<u8> for CartridgeKind {
+impl<T> From<T> for CartridgeKind
+where
+    T: Into<u8>,
+{
     /// Creates the appropriate [`CartridgeKind`] that maps to the given [`u8`] which represents
     /// the memory bank controller that a [`crate::cartridge::Cartridge`] requires. This value is
     /// read from the cartridge header.
@@ -97,8 +100,10 @@ impl From<u8> for CartridgeKind {
     ///
     /// This function will panic when the cartridge type which the byte maps to has not yet been
     /// implemented.
-    fn from(value: u8) -> Self {
-        match value {
+    fn from(value: T) -> Self {
+        let v = value.into();
+
+        match v {
             0x00 => CartridgeKind::RomOnly,
             0x01 => CartridgeKind::MBC1 {
                 ram: true,
@@ -112,7 +117,7 @@ impl From<u8> for CartridgeKind {
                 ram: true,
                 battery: true,
             },
-            _ => panic!("unsupported cartridge type: {:#02x}", value),
+            _ => panic!("unsupported cartridge type: {:#02x}", v),
         }
     }
 }
@@ -244,10 +249,14 @@ pub struct Header {
     pub sgb_flag: u8,
 }
 
-impl Header {
-    /// Creates a new [`Header`] by parsing the relevant bytes from of the specified [`Cartridge`]
-    /// data.
-    pub fn parse(data: &[u8]) -> Self {
+impl<T> From<T> for Header
+where
+    T: AsRef<[u8]>,
+{
+    /// Creates a new [`Header`] by parsing the relevant bytes of the [`Cartridge`] header.
+    fn from(value: T) -> Self {
+        let data = value.as_ref();
+
         let mut nintendo_logo = [0; NINTENDO_LOGO_LENGTH];
         nintendo_logo[0..NINTENDO_LOGO_LENGTH]
             .copy_from_slice(&data[NINTENDO_LOGO_START..=NINTENDO_LOGO_END]);
@@ -319,11 +328,14 @@ impl Header {
             computed_global_checksum,
         }
     }
+}
+
+impl Header {
     /// Creates a new [`Header`] by parsing the relevant bytes from of the specified [`Cartridge`]
     /// data. Once the header is parsed, the checksum is calculated and compared with the expected
     /// value in order to validate the cartridge contents.
     pub fn parse_and_validate(data: &[u8]) -> anyhow::Result<Self> {
-        let header = Self::parse(data);
+        let header = Self::from(data);
         if !header.is_valid() {
             anyhow::bail!("invalid cartridge header checksum");
         }

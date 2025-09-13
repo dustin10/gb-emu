@@ -4,7 +4,7 @@ use bounded_vec_deque::BoundedVecDeque;
 use std::fmt::Display;
 
 /// Represents the registers on the cpu. Allows for easy manipulation of combined 16-bit registers as well.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Registers {
     /// A register.
     pub a: u8,
@@ -1336,7 +1336,7 @@ pub struct Cpu {
 
 /// Default value for the maximum number of instructions stored in the instruction execution
 /// history of the [`Cpu`].
-const DEFAULT_CPU_MAX_HISTORY: usize = 30;
+const DEFAULT_CPU_MAX_HISTORY: usize = 256;
 
 impl Default for Cpu {
     /// Creates a default [`Cpu`] with max history size of 250.
@@ -1351,7 +1351,7 @@ impl Cpu {
         Self::default()
     }
     /// Creates a new [`Cpu`] with the given max instruction history length.
-    fn with_max_history(max: usize) -> Self {
+    pub fn with_max_history(max: usize) -> Self {
         Self {
             registers: Registers::default(),
             instruction_set: InstructionSet::default(),
